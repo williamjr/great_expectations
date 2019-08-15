@@ -509,3 +509,4 @@ def test_render_full_static_site(tmp_path_factory, filesystem_csv_3):
         ),
         "./tests/data_context/output/documentation"
     )
+
