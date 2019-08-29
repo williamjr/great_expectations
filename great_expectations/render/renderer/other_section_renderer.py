@@ -292,3 +292,69 @@ class ProfilingResultsOverviewSectionRenderer(Renderer):
                 column_types[column] = "--"
 
         return column_types
+
+
+class MultiBatchMetricsOverviewSectionRenderer(Renderer):
+    
+    @classmethod
+    def render(cls, data_asset_name, batch_fingerprints):
+        content_blocks = [
+            cls._render_header(),
+            cls._render_info_table(data_asset_name, batch_fingerprints)
+        ]
+        
+        return RenderedSectionContent(**{
+            "section_name": "Overview",
+            "content_blocks": content_blocks
+        })
+        
+    @classmethod
+    def _render_header(cls):
+        return RenderedComponentContent(**{
+            "content_block_type": "header",
+            "header": "Overview",
+            "styling": {
+                "classes": ["col-12", ],
+                "header": {
+                    "classes": ["alert", "alert-secondary"]
+                }
+            }
+        })
+    
+    @classmethod
+    def _render_info_table(cls, data_asset_name, batch_fingerprints):
+        datasource = data_asset_name.datasource
+        generator = data_asset_name.generator
+        generator_asset = data_asset_name.generator_asset
+        
+        data_asset_identifier = "{datasource}/{generator}/{generator_asset}".format(
+            datasource=datasource,
+            generator=generator,
+            generator_asset=generator_asset
+        )
+        
+        table_rows = []
+        table_rows.append(["Full Data Asset Identifier", data_asset_identifier])
+        table_rows.append(["Batch Fingerprints", cls._render_batch_fingerprint_list(batch_fingerprints)])
+        
+        return RenderedComponentContent(**{
+            "content_block_type": "table",
+            "header": "Info",
+            "table": table_rows,
+            "styling": {
+                "classes": ["col-12"],
+                "styles": {
+                    "margin-top": "20px"
+                },
+                "body": {
+                    "classes": ["table", "table-sm"]
+                }
+            },
+        })
+        
+    @classmethod
+    def _render_batch_fingerprint_list(cls, batch_fingerprints):
+        return RenderedComponentContent(**{
+            "content_block_type": "bullet_list",
+            "bullet_list": batch_fingerprints,
+        })
