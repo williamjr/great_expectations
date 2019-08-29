@@ -6,7 +6,8 @@ from .column_section_renderer import (
 from .page_renderer import (
     ProfilingResultsPageRenderer,
     ExpectationSuitePageRenderer,
-    ValidationResultsPageRenderer
+    ValidationResultsPageRenderer,
+    MultiBatchMetricsPageRenderer
 )
 
 from .site_index_page_renderer import SiteIndexPageRenderer
