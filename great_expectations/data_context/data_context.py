@@ -1202,7 +1202,7 @@ class ConfigOnlyDataContext(object):
         Returns:
             A dictionary describing how to locate the resource (specific to resource_store type)
         """
-        logger.debug("Starting DatContext.write_resource")
+        logger.debug("Starting DataContext.write_resource")
 
         if resource_store is None:
             logger.error("No resource store specified")

@@ -1,6 +1,9 @@
 import os
 import pytest
 from great_expectations.render.renderer.site_builder import SiteBuilder
+from great_expectations.util import (
+    gen_directory_tree_str
+)
 
 from great_expectations.data_context.types import (
     ValidationResultIdentifier
@@ -108,6 +111,28 @@ def test_configuration_driven_site_builder(titanic_data_context, filesystem_csv_
     assert len(index_links_dict['mydatasource']['mygenerator']['Titanic']['profiling_links']) == 1
     assert index_links_dict['mydatasource']['mygenerator']['Titanic']['profiling_links'][0]['filepath'] == 'profiling/mydatasource/mygenerator/Titanic/BasicDatasetProfiler.html'
 
+    print(gen_directory_tree_str(titanic_data_context.root_directory+"/uncommitted/documentation"))
+    assert gen_directory_tree_str(titanic_data_context.root_directory+"/uncommitted/documentation") == """\
+documentation/
+    local_site/
+        index.html
+        expectations/
+            mydatasource/
+                mygenerator/
+                    Titanic/
+                        BasicDatasetProfiler.html
+        profiling/
+            mydatasource/
+                mygenerator/
+                    Titanic/
+                        BasicDatasetProfiler.html
+        validation/
+            test_run_id_12345/
+                mydatasource/
+                    mygenerator/
+                        Titanic/
+                            BasicDatasetProfiler.html
+"""
 
 def test_pack_validation_result_list_into_nested_dict():
     assert SiteBuilder.pack_validation_result_list_into_nested_dict([
