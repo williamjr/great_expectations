@@ -22,10 +22,10 @@ from ..types.resource_identifiers import (
 # NOTE : Abe 2019/08/30 : inheritance among __init__ methods is currently messy. We should clean it up.
 
 class WriteOnlyStoreConfig(AllowedKeysDotDict):
-    _required_keys = set([
+    _allowed_keys = set([
         "serialization_type"
     ])
-    _allowed_keys = _required_keys
+    _required_keys = set([])
 
 
 class WriteOnlyStore(object):
@@ -49,10 +49,15 @@ class WriteOnlyStore(object):
         
         if serialization_type:
             serialization_method = self._get_serialization_method(
-                serialization_type)
+                serialization_type
+            )
         else:
             serialization_method = self._get_serialization_method(
-                self.config.serialization_type)
+                self.config.get(
+                    "serialization_type",
+                    None,
+                )
+            )
 
         serialized_value = serialization_method(value)
         self._set(key, serialized_value)

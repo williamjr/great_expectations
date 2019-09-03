@@ -1,10 +1,12 @@
 import logging
 logger = logging.getLogger(__name__)
 
+import os
 import json
 import importlib
 from collections import OrderedDict
 
+from ...data_context.util import safe_mmkdir
 from great_expectations.render.renderer import (
     SiteIndexPageRenderer
 )
@@ -13,6 +15,7 @@ from great_expectations.render.view import (
 )
 from great_expectations.data_context.types import (
     ValidationResultIdentifier,
+    NormalizedDataAssetName,
 )
 
 class SiteBuilder():
@@ -156,7 +159,8 @@ class SiteBuilder():
                                 expectation_suite_name = validation['meta']['expectation_suite_name']
                                 model = validation_renderer_class.render(validation)
 
-                                data_context.write_resource(
+                                cls._store_page_and_get_locator_info(
+                                    data_context,
                                     validation_view_class.render(model),  # bytes
                                     expectation_suite_name + '.html',  # name to be used inside namespace
                                     resource_store=site_config['site_store'],
@@ -164,6 +168,14 @@ class SiteBuilder():
                                     data_asset_name=data_asset_name,
                                     run_id=run_id
                                 )
+                                # data_context.write_resource(
+                                #     validation_view_class.render(model),  # bytes
+                                #     expectation_suite_name + '.html',  # name to be used inside namespace
+                                #     resource_store=site_config['site_store'],
+                                #     resource_namespace="validation",
+                                #     data_asset_name=data_asset_name,
+                                #     run_id=run_id
+                                # )
 
                             index_links_dict = cls.add_resource_info_to_index_links_dict(
                                 data_context,
@@ -206,7 +218,15 @@ class SiteBuilder():
                             expectation_suite_name = expectation_suite['expectation_suite_name']
                             model = expectations_renderer_class.render(expectation_suite)
 
-                            data_context.write_resource(
+                            # data_context.write_resource(
+                            #     expectations_view_class.render(model),  # bytes
+                            #     expectation_suite_name + '.html',  # name to be used inside namespace
+                            #     resource_store=site_config['site_store'],
+                            #     resource_namespace='expectations',
+                            #     data_asset_name=data_asset_name
+                            # )
+                            cls._store_page_and_get_locator_info(
+                                data_context,
                                 expectations_view_class.render(model),  # bytes
                                 expectation_suite_name + '.html',  # name to be used inside namespace
                                 resource_store=site_config['site_store'],
@@ -227,7 +247,8 @@ class SiteBuilder():
 
         index_page_output = DefaultJinjaIndexPageView.render(model)
 
-        index_page_locator_info = data_context.write_resource(
+        index_page_locator_info = cls._store_page_and_get_locator_info(
+            data_context,
             index_page_output,  # bytes
             'index.html',  # name to be used inside namespace
             resource_store=site_config['site_store']
@@ -259,7 +280,6 @@ class SiteBuilder():
             data_context.stores['local_validation_result_store'].list_keys(),
             run_id_filter=section_config.get("run_id_filter")
         )
-        # print(json.dumps(nested_namespaced_validation_result_dict, indent=2))
 
         #TODO: filter data sources if the config requires it
         for run_id, v0 in nested_namespaced_validation_result_dict.items():
@@ -275,7 +295,6 @@ class SiteBuilder():
                             if data_context._normalize_data_asset_name(data_asset_name) != data_context._normalize_data_asset_name(specified_data_asset_name):
                                 continue
                         for expectation_suite_name in expectation_suite_names:
-                            #!!! This validations_store_name is hardcoded and might not exist. Tests are passing, though.
                             validation = data_context.get_validation_result(data_asset_name,
                                                                             expectation_suite_name=expectation_suite_name,
                                                                             validations_store_name=validations_store_name,
@@ -285,14 +304,21 @@ class SiteBuilder():
                             expectation_suite_name = validation['meta']['expectation_suite_name']
                             model = profiling_renderer_class.render(validation)
 
-                            data_context.write_resource(
+                            # data_context.write_resource(
+                            #     profiling_view_class.render(model),  # bytes
+                            #     expectation_suite_name + '.html',  # name to be used inside namespace
+                            #     resource_store=resource_store,
+                            #     resource_namespace="profiling",
+                            #     data_asset_name=data_asset_name
+                            # )
+                            cls._store_page_and_get_locator_info(
+                                data_context,
                                 profiling_view_class.render(model),  # bytes
                                 expectation_suite_name + '.html',  # name to be used inside namespace
                                 resource_store=resource_store,
                                 resource_namespace="profiling",
                                 data_asset_name=data_asset_name
                             )
-
                             index_links_dict = cls.add_resource_info_to_index_links_dict(
                                 data_context,
                                 index_links_dict,
@@ -405,3 +431,99 @@ class SiteBuilder():
 
         # print(validation_results)
         return validation_results
+
+
+
+
+    @classmethod
+    def _store_page_and_get_locator_info(
+            cls,
+            data_context,
+            resource,  # bytes
+            resource_name,  # name to be used inside namespace, e.g. "my_file.html"
+            resource_store,  # store to use to write the resource
+            resource_namespace=None,  # An arbitrary name added to the resource namespace
+            data_asset_name=None,  # A name that will be normalized by the data_context and used in the namespace
+            expectation_suite_name=None,  # A string that is part of the namespace
+            run_id=None
+    ):  # A string that is part of the namespace
+        """Writes the bytes in "resource" according to the resource_store's writing method, with a name constructed
+        as follows:
+
+        resource_namespace/run_id/data_asset_name/expectation_suite_name/resource_name
+
+        If any of those components is None, it is omitted from the namespace.
+
+        Args:
+            resource:
+            resource_name:
+            resource_store:
+            resource_namespace:
+            data_asset_name:
+            expectation_suite_name:
+            run_id:
+
+        Returns:
+            A dictionary describing how to locate the resource (specific to resource_store type)
+        """
+        logger.debug("Starting SiteBuilder.store_page_and_get_locator_info")
+
+        if resource_store is None:
+            logger.error("No resource store specified")
+            return
+
+        resource_locator_info = {}
+
+        if resource_store['type'] == "s3":
+            raise NotImplementedError("s3 is not currently a supported resource_store type for writing")
+        elif resource_store['type'] == 'filesystem':
+
+            resource_store = cls._normalize_store_path(data_context, resource_store)
+            path_components = [resource_store['base_directory']]
+
+            if resource_namespace is not None:
+                path_components.append(resource_namespace)
+            if run_id is not None:
+                path_components.append(run_id)
+
+            if data_asset_name is not None:
+                if not isinstance(data_asset_name, NormalizedDataAssetName):
+                    normalized_name = data_context._normalize_data_asset_name(data_asset_name)
+                else:
+                    normalized_name = data_asset_name
+                if expectation_suite_name is not None:
+                    path_components.append(data_context._get_normalized_data_asset_name_filepath(normalized_name, expectation_suite_name, base_path="", file_extension=""))
+                else:
+                    path_components.append(
+                        data_context._get_normalized_data_asset_name_filepath(normalized_name, "",
+                                                                      base_path="", file_extension=""))
+            else:
+                if expectation_suite_name is not None:
+                    path_components.append(expectation_suite_name)
+
+            path_components.append(resource_name)
+            print(path_components)
+
+            path = os.path.join(
+                *path_components
+            )
+            safe_mmkdir(os.path.dirname(path))
+            with open(path, "w") as writer:
+                writer.write(resource)
+
+            resource_locator_info['path'] = path
+        else:
+            raise DataContextError("Unrecognized resource store type.")
+
+        # FIXME : Currently, resource_locator_info always returns a singleton dictionary: {"path": "some/path"}
+        # It looks like it's only used in one place in data_context.
+        # We should look at just returning a string instead.
+        return resource_locator_info
+
+    @classmethod
+    def _normalize_store_path(cls, data_context, resource_store):
+        if resource_store["type"] == "filesystem":
+            if not os.path.isabs(resource_store["base_directory"]):
+                resource_store["base_directory"] = os.path.join(data_context.root_directory, resource_store["base_directory"])
+        return resource_store
+

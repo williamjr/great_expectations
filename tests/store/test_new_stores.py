@@ -8,6 +8,10 @@ from great_expectations.data_context.store import (
     NamespacedReadWriteStoreConfig,
     BasicInMemoryStore,
     BasicInMemoryStoreConfig,
+    FileSystemWriteOnlyStoreConfig,
+    FileSystemWriteOnlyStore,
+    DelimitedFileSystemWriteOnlyStoreConfig,
+    DelimitedFileSystemWriteOnlyStore,
 )
 from great_expectations.data_context.types import (
     DataAssetIdentifier,
@@ -245,3 +249,54 @@ def test_BasicInMemoryStore():
     assert my_store.has_key("B") == False
     assert my_store.has_key("A") == True
     assert my_store.list_keys() == ["A"]
+
+
+# TODO : Call this TemplatedFileSystemWriteOnlyStore
+def test_FileSystemWriteOnlyStore(tmp_path_factory):
+    path = str(tmp_path_factory.mktemp('test_FileSystemWriteOnlyStore__dir'))
+
+    my_store = FileSystemWriteOnlyStore(
+        FileSystemWriteOnlyStoreConfig(**{
+            "base_directory" : "my_store/",
+        }),
+        root_directory = path,
+    )
+
+    my_store.set("a/b/index.txt", "hello!")
+
+    print( gen_directory_tree_str(path) )
+    assert gen_directory_tree_str(path) == """\
+test_FileSystemWriteOnlyStore__dir0/
+    my_store/
+        a/
+            b/
+                index.txt
+"""
+
+    with open(os.path.join(path, "my_store", "a/b/index.txt")) as file_:
+        assert file_.read() == "hello!"
+
+
+def test_DelimitedFileSystemWriteOnlyStore(tmp_path_factory):
+    path = str(tmp_path_factory.mktemp('test_DelimitedFileSystemWriteOnlyStore__dir'))
+
+    my_store = DelimitedFileSystemWriteOnlyStore(
+        DelimitedFileSystemWriteOnlyStoreConfig(**{
+            "base_directory" : "my_store/",
+        }),
+        root_directory = path,
+    )
+
+    my_store.set( ("a", "b", "index.txt"), "hello!")
+
+    print( gen_directory_tree_str(path) )
+    assert gen_directory_tree_str(path) == """\
+test_DelimitedFileSystemWriteOnlyStore__dir0/
+    my_store/
+        a/
+            b/
+                index.txt
+"""
+
+    with open(os.path.join(path, "my_store", "a/b/index.txt")) as file_:
+        assert file_.read() == "hello!"
