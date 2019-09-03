@@ -107,6 +107,7 @@ class MetricsStore(object):
                         new_metric = NamespaceAwareValidationMetric(
                             data_asset_name=data_asset_name,
                             batch_fingerprint=batch_fingerprint,
+                            expectation_type=result['expectation_config']['expectation_type'],
                             metric_name=metric_name,
                             metric_kwargs=metric_kwargs,
                             metric_value=result['result'][key])
