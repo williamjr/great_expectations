@@ -110,6 +110,8 @@ class SiteBuilder():
             data_context.root_directory
         )
 
+        validation_store = data_context.stores[site_config['validations_store']['name']]
+
         index_links_dict = OrderedDict()
 
         # the site config may specify the list of datasource names to document.
@@ -145,65 +147,111 @@ class SiteBuilder():
 
 
             #TODO: filter data sources if the config requires it
-            for run_id, v0 in cls.pack_validation_result_list_into_nested_dict(
-                #!!! We can fetch the validation store earlier
-                data_context.stores[site_config['validations_store']['name']].list_keys(),
-                run_id_filter=validation_section_config.get("run_id_filter")
-            ).items():
 
-                for datasource, v1 in v0.items():
+            # TODO : Abe 2019/09/02 : I'm pretty sure that this whole set of loops over run_ids, datasources, and generators is superflous.
+            # If we just did a single loop over validation_store.list_keys(), we would
+            #   1. Not have to repack the validation_result_list_into_nested_dict
+            #   2. Be able to iterate over a single list of validation_results_objects
+            #   3. Have typed objects to work from, rather than a mess of strings und untyped dictionaries
 
-                    if datasource not in datasources_to_document:
+            # for run_id, v0 in cls.pack_validation_result_list_into_nested_dict(
+            #     #!!! We can fetch the validation store earlier
+            #     validation_store.list_keys(),
+            #     run_id_filter=validation_section_config.get("run_id_filter")
+            # ).items():
+
+            #     for datasource, v1 in v0.items():
+
+            #         if datasource not in datasources_to_document:
+            #             continue
+
+            #         for generator, v2 in v1.items():
+            #             for generator_asset, expectation_suite_names in v2.items():
+            #                 #!!! Why is this a string? It should be a typed object or tuple.
+            #                 data_asset_name = data_context.data_asset_name_delimiter.join([datasource, generator, generator_asset])
+
+            #                 # Skip anything but the specified data_asset_name
+            #                 # NOTE : This seems odd. To loop over the whole site and skip everything that doesn't match.
+            #                 # Wouldn't it be far more efficient to have a methods to build a specific data asset, ans just call that?
+            #                 if specified_data_asset_name:
+            #                    if data_context._normalize_data_asset_name(data_asset_name) != data_context._normalize_data_asset_name(specified_data_asset_name):
+            #                        continue
+
+            #                 for expectation_suite_name in expectation_suite_names:
+            #                     #!!! We can fetch the validation store earlier
+            #                     validation = data_context.get_validation_result(data_asset_name,
+            #                                                                     expectation_suite_name=expectation_suite_name,
+            #                                                                     validations_store_name=site_config['validations_store']['name'],
+            #                                                                     run_id=run_id)
+
+            #                     logger.info("        Rendering validation: run id: {}, suite {} for data asset {}".format(run_id, expectation_suite_name, data_asset_name))
+            #                     data_asset_name = validation['meta']['data_asset_name']
+            #                     expectation_suite_name = validation['meta']['expectation_suite_name']
+            #                     model = validation_renderer_class.render(validation)
+
+            #                     cls._store_page_and_get_locator_info(
+            #                         data_context,
+            #                         validation_view_class.render(model),  # bytes
+            #                         expectation_suite_name + '.html',  # name to be used inside namespace
+            #                         resource_store=site_store,
+            #                         resource_namespace="validation",
+            #                         data_asset_name=data_asset_name,
+            #                         run_id=run_id
+            #                     )
+            #                     # data_context.write_resource(
+            #                     #     validation_view_class.render(model),  # bytes
+            #                     #     expectation_suite_name + '.html',  # name to be used inside namespace
+            #                     #     resource_store=site_config['site_store'],
+            #                     #     resource_namespace="validation",
+            #                     #     data_asset_name=data_asset_name,
+            #                     #     run_id=run_id
+            #                     # )
+
+            #                 index_links_dict = cls.add_resource_info_to_index_links_dict(
+            #                     data_context,
+            #                     index_links_dict,
+            #                     data_asset_name,
+            #                     datasource, generator, generator_asset, expectation_suite_name, "validation", run_id=run_id
+            #                 )
+
+        validation_results = validation_store.list_keys()
+        run_id_filter = validation_section_config.get("run_id_filter")
+        for validation_result_key in validation_results:
+
+            if run_id_filter:
+                if run_id_filter.get("eq"):
+                    if run_id_filter.get("eq") != validation_result_key.run_id:
+                        continue
+                elif run_id_filter.get("ne"):
+                    if run_id_filter.get("ne") == validation_result_key.run_id:
                         continue
 
-                    for generator, v2 in v1.items():
-                        for generator_asset, expectation_suite_names in v2.items():
-                            #!!! Why is this a string? It should be a typed object or tuple.
-                            data_asset_name = data_context.data_asset_name_delimiter.join([datasource, generator, generator_asset])
+            validation_result = validation_store.get(validation_result_key)
 
-                            # Skip anything but the specified data_asset_name
-                            # NOTE : This seems odd. To loop over the whole site and skip everything that doesn't match.
-                            # Wouldn't it be far more efficient to have a methods to build a specific data asset, ans just call that?
-                            if specified_data_asset_name:
-                               if data_context._normalize_data_asset_name(data_asset_name) != data_context._normalize_data_asset_name(specified_data_asset_name):
-                                   continue
+            logger.info("        Rendering validation_result : {}".format(validation_result_key.to_string()))
+            rendered_model = validation_renderer_class.render(validation_result)
+            rendered_html = validation_view_class.render(rendered_model)
 
-                            for expectation_suite_name in expectation_suite_names:
-                                #!!! We can fetch the validation store earlier
-                                validation = data_context.get_validation_result(data_asset_name,
-                                                                                expectation_suite_name=expectation_suite_name,
-                                                                                validations_store_name=site_config['validations_store']['name'],
-                                                                                run_id=run_id)
+            # FIXME FIXME FIXME OH, THE PAIN : Need to unpack ValidationResultIdentifier here so that it will fit into _store_page_and_get_locator_info
+            # Either that, or create a new version of _store_page_and_get_locator_info to consume ValidationResultIdentifiers 
 
-                                logger.info("        Rendering validation: run id: {}, suite {} for data asset {}".format(run_id, expectation_suite_name, data_asset_name))
-                                data_asset_name = validation['meta']['data_asset_name']
-                                expectation_suite_name = validation['meta']['expectation_suite_name']
-                                model = validation_renderer_class.render(validation)
+            cls._store_page_and_get_locator_info(
+                data_context,
+                rendered_html,  # bytes
+                expectation_suite_name + '.html',  # name to be used inside namespace
+                resource_store=site_store,
+                resource_namespace="validation",
+                data_asset_name=data_asset_name,
+                run_id=run_id
+            )
 
-                                cls._store_page_and_get_locator_info(
-                                    data_context,
-                                    validation_view_class.render(model),  # bytes
-                                    expectation_suite_name + '.html',  # name to be used inside namespace
-                                    resource_store=site_store,
-                                    resource_namespace="validation",
-                                    data_asset_name=data_asset_name,
-                                    run_id=run_id
-                                )
-                                # data_context.write_resource(
-                                #     validation_view_class.render(model),  # bytes
-                                #     expectation_suite_name + '.html',  # name to be used inside namespace
-                                #     resource_store=site_config['site_store'],
-                                #     resource_namespace="validation",
-                                #     data_asset_name=data_asset_name,
-                                #     run_id=run_id
-                                # )
+            index_links_dict = cls.add_resource_info_to_index_links_dict(
+                data_context,
+                index_links_dict,
+                data_asset_name,
+                datasource, generator, generator_asset, expectation_suite_name, "validation", run_id=run_id
+            )
 
-                            index_links_dict = cls.add_resource_info_to_index_links_dict(
-                                data_context,
-                                index_links_dict,
-                                data_asset_name,
-                                datasource, generator, generator_asset, expectation_suite_name, "validation", run_id=run_id
-                            )
 
 
         # expectation suites
