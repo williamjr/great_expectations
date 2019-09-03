@@ -119,7 +119,7 @@ data_docs:
     # Local site provides the convenience of visualizing all the entities stored in JSON files as HTML.
       type: SiteBuilder
       site_store: # where the HTML will be written to (filesystem/S3)
-        type: filesystem
+        # type: filesystem
         base_directory: uncommitted/documentation/local_site
       validations_store: # where to look for validation results (filesystem/S3)
         name: local_validation_result_store
@@ -168,7 +168,7 @@ data_docs:
       # Reach out on Slack (https://tinyurl.com/great-expectations-slack>) if you would like to discuss the best way to configure a team site.
       type: SiteBuilder
       site_store:
-        type: filesystem
+        # type: filesystem
         base_directory: uncommitted/documentation/team_site
 #      validations_store:
 #      profiling_store:
