@@ -455,6 +455,7 @@ class SiteBuilder():
         If any of those components is None, it is omitted from the namespace.
 
         Args:
+            data_context
             resource:
             resource_name:
             resource_store:
@@ -474,46 +475,25 @@ class SiteBuilder():
 
         resource_locator_info = {}
 
-        if resource_store['type'] == "s3":
-            raise NotImplementedError("s3 is not currently a supported resource_store type for writing")
-        elif resource_store['type'] == 'filesystem':
+        path_components = cls._generate_path_tuple(
+            data_context,
+            resource,  # bytes
+            resource_name,  # name to be used inside namespace, e.g. "my_file.html"
+            resource_store,  # store to use to write the resource
+            resource_namespace,  # An arbitrary name added to the resource namespace
+            data_asset_name,  # A name that will be normalized by the data_context and used in the namespace
+            expectation_suite_name,  # A string that is part of the namespace
+            run_id,
+        )
 
-            resource_store = cls._normalize_store_path(data_context, resource_store)
-            path_components = [resource_store['base_directory']]
+        path = os.path.join(
+            *path_components
+        )
+        safe_mmkdir(os.path.dirname(path))
+        with open(path, "w") as writer:
+            writer.write(resource)
 
-            if resource_namespace is not None:
-                path_components.append(resource_namespace)
-            if run_id is not None:
-                path_components.append(run_id)
-
-            if data_asset_name is not None:
-                if not isinstance(data_asset_name, NormalizedDataAssetName):
-                    normalized_name = data_context._normalize_data_asset_name(data_asset_name)
-                else:
-                    normalized_name = data_asset_name
-                if expectation_suite_name is not None:
-                    path_components.append(data_context._get_normalized_data_asset_name_filepath(normalized_name, expectation_suite_name, base_path="", file_extension=""))
-                else:
-                    path_components.append(
-                        data_context._get_normalized_data_asset_name_filepath(normalized_name, "",
-                                                                      base_path="", file_extension=""))
-            else:
-                if expectation_suite_name is not None:
-                    path_components.append(expectation_suite_name)
-
-            path_components.append(resource_name)
-            print(path_components)
-
-            path = os.path.join(
-                *path_components
-            )
-            safe_mmkdir(os.path.dirname(path))
-            with open(path, "w") as writer:
-                writer.write(resource)
-
-            resource_locator_info['path'] = path
-        else:
-            raise DataContextError("Unrecognized resource store type.")
+        resource_locator_info['path'] = path
 
         # FIXME : Currently, resource_locator_info always returns a singleton dictionary: {"path": "some/path"}
         # It looks like it's only used in one place in data_context.
@@ -521,9 +501,49 @@ class SiteBuilder():
         return resource_locator_info
 
     @classmethod
+    def _generate_path_tuple(
+        cls,
+        data_context,
+        resource,  # bytes
+        resource_name,  # name to be used inside namespace, e.g. "my_file.html"
+        resource_store,  # store to use to write the resource
+        resource_namespace=None,  # An arbitrary name added to the resource namespace
+        data_asset_name=None,  # A name that will be normalized by the data_context and used in the namespace
+        expectation_suite_name=None,  # A string that is part of the namespace
+        run_id=None
+    ):
+        resource_store = cls._normalize_store_path(data_context, resource_store)
+        path_components = [resource_store['base_directory']]
+
+        if resource_namespace is not None:
+            path_components.append(resource_namespace)
+        if run_id is not None:
+            path_components.append(run_id)
+
+        if data_asset_name is not None:
+            if not isinstance(data_asset_name, NormalizedDataAssetName):
+                normalized_name = data_context._normalize_data_asset_name(data_asset_name)
+            else:
+                normalized_name = data_asset_name
+            if expectation_suite_name is not None:
+                path_components.append(data_context._get_normalized_data_asset_name_filepath(normalized_name, expectation_suite_name, base_path="", file_extension=""))
+            else:
+                path_components.append(
+                    data_context._get_normalized_data_asset_name_filepath(normalized_name, "",
+                                                                    base_path="", file_extension=""))
+        else:
+            if expectation_suite_name is not None:
+                path_components.append(expectation_suite_name)
+
+        path_components.append(resource_name)
+        
+        return path_components
+
+    @classmethod
     def _normalize_store_path(cls, data_context, resource_store):
         if resource_store["type"] == "filesystem":
             if not os.path.isabs(resource_store["base_directory"]):
                 resource_store["base_directory"] = os.path.join(data_context.root_directory, resource_store["base_directory"])
+
         return resource_store
 
