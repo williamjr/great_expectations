@@ -10,8 +10,9 @@ get_nested_value_from_dict
 class MetricsStore(object):
     EXPECTATION_DEFINED_METRICS_LOOKUP_TABLE = {
         ('expect_column_values_to_not_be_null', 'unexpected_percent'): ('column',), # note: "," is important - it makes it a tuple!
-        ('expect_column_quantile_values_to_be_between', ('observed_value', 'values')): (
-            'column', ('quantile_ranges', 'quantiles')),
+        ('expect_column_kl_divergence_to_be_less_than', ('details', 'observed_partition')): ('column',)
+        # ('expect_column_quantile_values_to_be_between', ('observed_value', 'values')): (
+        #     'column', ('quantile_ranges', 'quantiles')),
 
     }
 
@@ -74,7 +75,9 @@ class MetricsStore(object):
             'expect_column_proportion_of_unique_values_to_be_between': {
                 'observed_value': 'column_proportion_of_unique_values'
             },
-            # 'expect_column_quantile_values_to_be_between',
+            'expect_column_quantile_values_to_be_between': {
+                'observed_value': 'column_quantiles'
+            },
             'expect_column_stdev_to_be_between': {
                 'observed_value': 'column_stdev'
             },
