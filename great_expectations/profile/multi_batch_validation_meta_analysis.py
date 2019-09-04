@@ -111,6 +111,7 @@ class MultiBatchValidationMetaAnalysis(object):
                     data_asset_name=first_non_null_single_batch_metric.data_asset_name,
                     metric_name=first_non_null_single_batch_metric.metric_name,
                     metric_kwargs=first_non_null_single_batch_metric.metric_kwargs,
+                    expectation_type=first_non_null_single_batch_metric.expectation_type,
                     batch_fingerprints=batch_index,
                     batch_metric_values=[None if metric is None else metric.metric_value for metric in
                                          single_batch_metric_list]
