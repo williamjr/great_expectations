@@ -1,5 +1,7 @@
+from functools import reduce
 import json
 from string import Template
+import inspect
 import re
 
 import altair as alt
@@ -657,3 +659,358 @@ class ExpectationSuiteColumnSectionRenderer(ColumnSectionRenderer):
             "section_name": column,
             "content_blocks": populated_content_blocks
         })
+
+
+class MultiBatchMetricsColumnSectionRenderer(ColumnSectionRenderer):
+    metric_render_mapper = {
+        "column_min": ["basic_histogram", "line_chart"],
+        "column_max": ["basic_histogram", "line_chart"],
+        "column_mean": ["basic_histogram", "line_chart"],
+        "column_stdev": ["basic_histogram", "line_chart"],
+        "column_median": ["basic_histogram", "line_chart"],
+        "column_proportion_of_unique_values": ["basic_histogram", "line_chart"],
+        "column_unique_count": ["basic_histogram", "line_chart"],
+        "row_count": ["basic_histogram", "line_chart"],
+        "column_quantiles": ["quantile_line_chart", "quantile_histogram"],
+        "distinct_set_members": ["distinct_set_member_matrix"]
+    }
+    
+    @classmethod
+    def render(cls, multi_batch_metrics_dicts, column_name=None):
+        section_name = column_name if column_name else "Non-Column Metrics"
+        content_blocks = [cls._render_header(section_name)]
+        
+        for metric_dict in multi_batch_metrics_dicts:
+            content_blocks += cls._render_metric_blocks(metric_dict)
+        
+        return RenderedSectionContent(**{
+            "section_name": section_name,
+            "content_blocks": content_blocks
+        })
+    
+    @classmethod
+    def _render_metric_blocks(cls, metric_dict):
+        metric_name = metric_dict.get("metric_name")
+        expectation_type = metric_dict["expectation_type"]
+        
+        if not metric_name or not cls.metric_render_mapper.get(metric_name):
+            return []
+        
+        metric_block_names = cls.metric_render_mapper.get(metric_name)
+        
+        metric_blocks = [cls._render_metric_heading(metric_name, expectation_type)]
+        
+        for block_name in metric_block_names:
+            block_renderer = getattr(cls, "_render_{block_name}".format(block_name=block_name), None)
+            if block_renderer:
+                metric_block = getattr(cls, "_render_{block_name}".format(block_name=block_name))(metric_dict)
+                if type(metric_block) is list:
+                    metric_blocks += metric_block
+                else:
+                    metric_blocks.append(metric_block)
+        
+        return metric_blocks
+    
+    @classmethod
+    def _render_metric_heading(cls, metric_name, expectation_type):
+        return RenderedComponentContent(**{
+            "content_block_type": "string_template",
+            "string_template": {
+                "tag": "div",
+                "template": "$metric_name",
+                "params": {
+                  "metric_name": metric_name
+                },
+                "tooltip": {
+                    "content": expectation_type
+                },
+                "styling": {
+                    "params": {
+                        "metric_name": {
+                            "tag": "h5",
+                        }
+                    },
+                    "classes": [
+                        "col-12",
+                        "pt-2",
+                        "pb-1",
+                        "pl-4",
+                        "border-top",
+                        "border-bottom",
+                        "border-dark",
+                    ]
+                }
+            },
+            "styling": {
+                "classes": [
+                    "col-12",
+                    "mt-3",
+                    "mb-2",
+                ]
+            }
+        })
+    
+    @classmethod
+    def _render_distinct_set_member_matrix(cls, metric_dict):
+        batch_indices = [batch_fingerprint.split("__")[0] for batch_fingerprint in metric_dict["batch_fingerprints"]]
+        metric_values = metric_dict["batch_metric_values"]
+        value_sets_union = list(set(reduce(lambda x1, x2: x1 + x2, metric_values)))
+        
+        df_indices = []
+        value_set_member_list = []
+        has_value_set_member_list = []
+
+        for list_idx, batch_index in enumerate(batch_indices):
+            for value_set_member in value_sets_union:
+                df_indices.append(batch_index)
+                value_set_member_list.append(value_set_member)
+                has_value_set_member_list.append(
+                    True) if value_set_member in metric_values[list_idx] else has_value_set_member_list.append(False)
+
+        value_sets_dict = {
+            'batch_index': df_indices,
+            'value_set_member': value_set_member_list,
+            'has_value_set_member': has_value_set_member_list
+        }
+
+        value_sets_df = pd.DataFrame(value_sets_dict)
+
+        distinct_set_member_matrix = alt.Chart(value_sets_df).mark_rect(stroke='black').encode(
+            x='batch_index:O',
+            y='value_set_member:N',
+            color='has_value_set_member:N'
+        )
+        distinct_set_member_matrix_json = distinct_set_member_matrix.to_json()
+        
+        return RenderedComponentContent(**{
+            "content_block_type": "graph",
+            "graph": distinct_set_member_matrix_json,
+            "styling": {
+                "classes": ["col-12"],
+                "styles": {
+                    "margin-top": "20px"
+                }
+            }
+        })
+    
+    @classmethod
+    def _render_basic_histogram(cls, metric_dict):
+        batch_indices = [batch_fingerprint.split("__")[0] for batch_fingerprint in metric_dict["batch_fingerprints"]]
+        metric_values = metric_dict["batch_metric_values"]
+        
+        histogram_df = pd.DataFrame({
+            "batch_index": batch_indices,
+            "metric_value": metric_values
+        })
+        
+        histogram = alt.Chart(histogram_df).mark_bar().encode(
+            alt.X('metric_value', bin=True),
+            y='count()'
+        ).properties(
+            width=300,
+            height=300,
+            autosize="fit",
+            title="Metric Histogram"
+        )
+        
+        histogram_json = histogram.to_json()
+        
+        return RenderedComponentContent(**{
+            "content_block_type": "graph",
+            "graph": histogram_json,
+            "styling": {
+                "classes": ["col-4"],
+                "styles": {
+                    "margin-top": "20px"
+                }
+            }
+        })
+    
+    @classmethod
+    def _render_line_chart(cls, metric_dict):
+        batch_indices = [batch_fingerprint.split("__")[0] for batch_fingerprint in metric_dict["batch_fingerprints"]]
+        metric_values = metric_dict["batch_metric_values"]
+    
+        line_chart_df = pd.DataFrame({
+            "batch_index": batch_indices,
+            "metric_value": metric_values
+        })
+    
+        line_chart = alt.Chart(line_chart_df).mark_line(point=True).encode(
+            alt.X('batch_index:O'),
+            y='metric_value'
+        ).properties(
+            width=650,
+            height=300,
+            autosize="fit",
+            title="Metric Values Across Batches"
+        )
+    
+        line_chart_json = line_chart.to_json()
+    
+        return RenderedComponentContent(**{
+            "content_block_type": "graph",
+            "graph": line_chart_json,
+            "styling": {
+                "classes": ["col-8"],
+                "styles": {
+                    "margin-top": "20px"
+                }
+            }
+        })
+    
+    @classmethod
+    def _render_quantile_histogram(cls, metric_dict):
+        batch_indices = [batch_fingerprint.split("__")[0] for batch_fingerprint in metric_dict["batch_fingerprints"]]
+        metric_values = metric_dict["batch_metric_values"]
+        quantiles = metric_values[0]["quantiles"]
+        quantile_values = [metric_value["values"] for metric_value in metric_values]
+        
+        quantiles_hist_dict = {
+            # "batch_indices": batch_indices
+        }
+
+        quantile_strings = {
+            .25: "Q1",
+            .75: "Q3",
+            .50: "Median"
+        }
+        
+        for list_idx, batch_idx in enumerate(batch_indices):
+            for quantile_idx, quantile in enumerate(quantiles):
+                quantile_key = quantile_strings.get(
+                    quantile,
+                    str(int(quantile * 100)) + "%"
+                )
+                if not quantiles_hist_dict.get(quantile_key):
+                    quantiles_hist_dict[quantile_key] = []
+                quantiles_hist_dict[quantile_key].append(quantile_values[list_idx][quantile_idx])
+
+        quantiles_hist_df = pd.DataFrame(quantiles_hist_dict)
+
+        quantiles_histograms = []
+
+        for quantile in quantiles_hist_df.columns:
+            quantiles_histograms.append(
+                alt.Chart(quantiles_hist_df).mark_bar().encode(
+                    alt.X(quantile, bin=True),
+                    y='count()'
+                ).properties(
+                    width=300,
+                    height=300,
+                    autosize="fit",
+                    title="{quantile} Quantile Histogram".format(quantile=quantile)
+                )
+            )
+            
+        quantiles_histograms_json = [histogram.to_json() for histogram in  quantiles_histograms]
+        
+        return [
+            RenderedComponentContent(**{
+                "content_block_type": "graph",
+                "graph": histogram_json,
+                "styling": {
+                    "classes": ["col-4"],
+                    "styles": {
+                        "margin-top": "20px"
+                    }
+                }
+            }) for histogram_json in quantiles_histograms_json
+        ]
+    
+    @classmethod
+    def _render_quantile_line_chart(cls, metric_dict):
+        batch_indices = [batch_fingerprint.split("__")[0] for batch_fingerprint in metric_dict["batch_fingerprints"]]
+        metric_values = metric_dict["batch_metric_values"]
+        quantiles = metric_values[0]["quantiles"]
+        quantile_values = [metric_value["values"] for metric_value in metric_values]
+        
+        quantile_line_chart_dict = {
+            "batch_index": [],
+            "quantile": [],
+            "value": []
+        }
+
+        quantile_strings = {
+            .25: "Q1",
+            .75: "Q3",
+            .50: "Median"
+        }
+        
+        for list_idx, batch_idx in enumerate(batch_indices):
+            for quantile_idx, quantile in enumerate(quantiles):
+                quantile_key = quantile_strings.get(
+                    quantile,
+                    str(int(quantile * 100)) + "%"
+                )
+                quantile_line_chart_dict["quantile"].append(quantile_key)
+                quantile_line_chart_dict["batch_index"].append(batch_idx)
+                quantile_line_chart_dict["value"].append(quantile_values[list_idx][quantile_idx])
+                
+        quantile_line_chart_df = pd.DataFrame(quantile_line_chart_dict)
+
+        nearest = alt.selection(type='single', nearest=True, on='mouseover', fields=['batch_index'], empty='none')
+
+        line = alt.Chart(quantile_line_chart_df).mark_line().encode(
+            x='batch_index:O',
+            y='value:Q',
+            color='quantile:N'
+        )
+
+        selectors = alt.Chart(quantile_line_chart_df).mark_point().encode(
+            x='batch_index:O',
+            opacity=alt.value(0)
+        ).add_selection(nearest)
+
+        points = line.mark_point().encode(
+            opacity=alt.condition(nearest, alt.value(1), alt.value(0))
+        )
+
+        text = line.mark_text(align='left', dx=5, dy=-5).encode(
+            text=alt.condition(nearest, 'value:Q', alt.value(' '))
+        )
+
+        rules = alt.Chart(quantile_line_chart_df).mark_rule(color='gray').encode(
+            x='batch_index:O'
+        ).transform_filter(nearest)
+
+        quantile_line_chart = alt.layer(
+            line, selectors, points, rules, text
+        ).properties(
+            width=950,
+            height=400,
+            title="Quantile Values Across Batches"
+        )
+        quantile_line_chart_json = quantile_line_chart.to_json()
+        
+        return RenderedComponentContent(**{
+            "content_block_type": "graph",
+            "graph": quantile_line_chart_json,
+            "styling": {
+                "classes": ["col-12"],
+                "styles": {
+                    "margin-top": "20px",
+                    "margin-bottom": "20px"
+                }
+            }
+        })
+    
+    @classmethod
+    def _render_header(cls, header):
+        return RenderedComponentContent(**{
+            "content_block_type": "header",
+            "header": {
+                "template": convert_to_string_and_escape(header),
+                "tooltip": {
+                    "content": "expect_column_to_exist",
+                    "placement": "top"
+                }
+            },
+            "styling": {
+                "classes": ["col-12"],
+                "header": {
+                    "classes": ["alert", "alert-secondary"]
+                }
+            }
+        })
+    
