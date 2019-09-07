@@ -751,6 +751,47 @@ class MultiBatchMetricsColumnSectionRenderer(ColumnSectionRenderer):
         })
     
     @classmethod
+    def _render_layered_column_histogram(cls, metric_dict):
+        batch_indices = [batch_fingerprint.split("__")[0] for batch_fingerprint in metric_dict["batch_fingerprints"]]
+        metric_values = metric_dict["batch_metric_values"]
+        opacity = 1.0 / len(batch_indices)
+        histograms = []
+        
+        for observed_partition in metric_values:
+            bins = observed_partition["bins"]
+            bins_x1 = [round(value, 1) for value in bins[:-1]]
+            bins_x2 = [round(value, 1) for value in bins[1:]]
+            weights = observed_partition["weights"]
+    
+            df = pd.DataFrame({
+                "bin_min": bins_x1,
+                "bin_max": bins_x2,
+                "weights": weights,
+            })
+            df.weights *= 100
+    
+            bars = alt.Chart(df).mark_bar(opacity=opacity).encode(
+                x='bin_min:Q',
+                x2='bin_max:Q',
+                y="weights:Q"
+            )
+            histograms.append(bars)
+            
+        layered_histogram = alt.layer(*histograms).resolve_scale(x='shared', y='shared')
+        layered_histogram_json = layered_histogram.to_json()
+        
+        return RenderedComponentContent(**{
+            "content_block_type": "graph",
+            "graph": layered_histogram_json,
+            "styling": {
+                "classes": ["col-6"],
+                "styles": {
+                    "margin-top": "20px"
+                }
+            }
+        })
+    
+    @classmethod
     def _render_distinct_set_member_matrix(cls, metric_dict):
         batch_indices = [batch_fingerprint.split("__")[0] for batch_fingerprint in metric_dict["batch_fingerprints"]]
         metric_values = metric_dict["batch_metric_values"]
@@ -903,7 +944,7 @@ class MultiBatchMetricsColumnSectionRenderer(ColumnSectionRenderer):
                 )
             )
             
-        quantiles_histograms_json = [histogram.to_json() for histogram in  quantiles_histograms]
+        quantiles_histograms_json = [histogram.to_json() for histogram in quantiles_histograms]
         
         return [
             RenderedComponentContent(**{
