@@ -45,7 +45,6 @@ class MetricsStore(object):
 
                     yield new_metric
 
-
     @classmethod
     def get_metrics_for_expectation(cls, result, data_asset_name, batch_fingerprint):
         """
@@ -60,8 +59,9 @@ class MetricsStore(object):
         :return: a dict {metric_name -> metric_value}
         """
         expectation_metrics = {
-            # 'expect_column_distinct_values_to_be_in_set'
-            # 'expect_column_kl_divergence_to_be_less_than',
+            'expect_column_distinct_values_to_be_in_set': {
+                'observed_value': 'distinct_set_members'
+            },
             'expect_column_max_to_be_between': {
                 'observed_value': 'column_max'
             },
@@ -86,17 +86,11 @@ class MetricsStore(object):
             'expect_column_unique_value_count_to_be_between': {
                 'observed_value': 'column_unique_count'
             },
-            # 'expect_column_values_to_be_between',
             # 'expect_column_values_to_be_in_set',
-            # 'expect_column_values_to_be_in_type_list',
-            'expect_column_values_to_be_unique': {
-
-            },
             # 'expect_table_columns_to_match_ordered_list',
             'expect_table_row_count_to_be_between': {
                 'observed_value': 'row_count'
             }
-
         }
 
         metrics = []
