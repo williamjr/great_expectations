@@ -672,7 +672,35 @@ class MultiBatchMetricsColumnSectionRenderer(ColumnSectionRenderer):
         "column_unique_count": ["basic_histogram", "line_chart"],
         "row_count": ["basic_histogram", "line_chart"],
         "column_quantiles": ["quantile_line_chart", "quantile_histogram"],
-        "distinct_set_members": ["distinct_set_member_matrix"]
+        "distinct_set_members": ["distinct_set_member_matrix"],
+        "expect_column_kl_divergence_to_be_less_than": ["layered_column_histogram"],
+        "expect_column_values_to_be_between": ["basic_histogram", "line_chart"],
+        "expect_column_values_to_be_in_type_list": ["basic_histogram", "line_chart"],
+        "expect_column_values_to_be_unique": ["basic_histogram", "line_chart"],
+        "expect_column_values_to_not_be_null": ["basic_histogram", "line_chart"],
+        "expect_column_values_to_not_match_regex": ["basic_histogram", "line_chart"]
+    }
+    
+    expectation_defined_metric_name_mapper = {
+        "expect_column_kl_divergence_to_be_less_than": "layered_column_histogram",
+        "expect_column_values_to_be_between": lambda metric_dict: "%_of_values_between_{min_value}_and_{max_value}".format(
+            min_value=metric_dict["metric_kwargs"]["min_value"],
+            max_value=metric_dict["metric_kwargs"]["max_value"]
+        ),
+        "expect_column_values_to_be_in_type_list": lambda metric_dict: "%_of_values_with_type_in_list_{type_list}".format(
+            type_list=metric_dict["metric_kwargs"]["type_list"]
+        ),
+        "expect_column_values_to_be_unique": "%_of_unique_values",
+        "expect_column_values_to_not_be_null": "%_of_null_values",
+        "expect_column_values_to_not_match_regex": lambda metric_dict: "%_of_values_matching_regex_/{regex}/".format(
+            regex=metric_dict["metric_kwargs"]["regex"]
+        )
+    }
+    
+    metric_value_mappers = {
+        "expect_column_values_to_be_between": lambda unexpected_percent: 1 - unexpected_percent,
+        "expect_column_values_to_be_in_type_list": lambda unexpected_percent: 1 - unexpected_percent,
+        "expect_column_values_to_be_unique": lambda unexpected_percent: 1 - unexpected_percent,
     }
     
     @classmethod
@@ -681,6 +709,12 @@ class MultiBatchMetricsColumnSectionRenderer(ColumnSectionRenderer):
         content_blocks = [cls._render_header(section_name)]
         
         for metric_dict in multi_batch_metrics_dicts:
+            expectation_type = metric_dict["expectation_type"]
+            if expectation_type in cls.metric_value_mappers:
+                metric_value_mapper = cls.metric_value_mappers[expectation_type]
+                metric_dict["batch_metric_values"] = [
+                    metric_value_mapper(metric_value) for metric_value in metric_dict["batch_metric_values"]
+                ]
             content_blocks += cls._render_metric_blocks(metric_dict)
         
         return RenderedSectionContent(**{
@@ -689,14 +723,34 @@ class MultiBatchMetricsColumnSectionRenderer(ColumnSectionRenderer):
         })
     
     @classmethod
+    def _expectation_type_to_metric_name(cls, expectation_type, metric_dict):
+        if expectation_type not in cls.expectation_defined_metric_name_mapper:
+            return expectation_type
+        else:
+            metric_name = cls.expectation_defined_metric_name_mapper.get(expectation_type)
+            if type(metric_name) is not str:
+                metric_name = metric_name(metric_dict)
+            return metric_name
+    
+    @classmethod
+    def _get_metric_block_names(cls, metric_dict):
+        expectation_type = metric_dict["expectation_type"]
+        metric_name = metric_dict.get("metric_name")
+        metric_block_names = cls.metric_render_mapper.get(metric_name, []) if metric_name else cls.metric_render_mapper.get(expectation_type, [])
+        
+        return metric_block_names
+
+    @classmethod
     def _render_metric_blocks(cls, metric_dict):
         metric_name = metric_dict.get("metric_name")
         expectation_type = metric_dict["expectation_type"]
         
-        if not metric_name or not cls.metric_render_mapper.get(metric_name):
+        metric_block_names = cls._get_metric_block_names(metric_dict)
+        if not metric_block_names:
             return []
         
-        metric_block_names = cls.metric_render_mapper.get(metric_name)
+        if not metric_name:
+            metric_name = cls._expectation_type_to_metric_name(expectation_type, metric_dict)
         
         metric_blocks = [cls._render_metric_heading(metric_name, expectation_type)]
         
