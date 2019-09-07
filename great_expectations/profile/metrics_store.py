@@ -10,10 +10,12 @@ get_nested_value_from_dict
 class MetricsStore(object):
     EXPECTATION_DEFINED_METRICS_LOOKUP_TABLE = {
         ('expect_column_values_to_not_be_null', 'unexpected_percent'): ('column',), # note: "," is important - it makes it a tuple!
-        ('expect_column_kl_divergence_to_be_less_than', ('details', 'observed_partition')): ('column',)
-        # ('expect_column_quantile_values_to_be_between', ('observed_value', 'values')): (
-        #     'column', ('quantile_ranges', 'quantiles')),
-
+        ('expect_column_kl_divergence_to_be_less_than', ('details', 'observed_partition', 'bins',)): ('column',),
+        ('expect_column_values_to_be_between', 'unexpected_percent'): ('column', 'min_value', 'max_value'),
+        ('expect_column_values_to_be_in_type_list', 'unexpected_percent'): ('column', 'type_list'),
+        ('expect_column_values_to_be_unique', 'unexpected_percent'): ('column',),
+        ('expect_column_values_to_not_be_null', 'unexpected_percent'): ('column',),
+        ('expect_column_values_to_not_match_regex', 'unexpected_percent'): ('column', 'regex')
     }
 
     @classmethod
