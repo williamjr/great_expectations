@@ -4,9 +4,10 @@ import pypandoc
 from great_expectations.render.renderer import (
     ExpectationSuitePageRenderer,
     ProfilingResultsPageRenderer,
-    ValidationResultsPageRenderer
+    ValidationResultsPageRenderer,
+    MultiBatchMetricsPageRenderer
 )
-
+from great_expectations.render.view import DefaultJinjaPageView
 
 def test_ExpectationSuitePageRenderer_render_asset_notes():
     # import pypandoc
@@ -237,3 +238,11 @@ def test_ValidationResultsPageRenderer_render_validation_statistics(titanic_prof
 
     assert validation_statistics == expected_validation_statistics
 
+
+def test_MultiBatchMetricsPageRenderer_render(multi_batch_metrics_dict):
+    multi_batch_page = MultiBatchMetricsPageRenderer.render(multi_batch_metrics_dict)
+    multi_batch_page_html = DefaultJinjaPageView.render(multi_batch_page)
+
+    with open('./tests/render/output/test_MultiBatchMetricsPageRenderer_render.html', 'w') \
+            as outfile:
+        outfile.write(multi_batch_page_html)

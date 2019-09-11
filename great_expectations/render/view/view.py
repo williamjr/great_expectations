@@ -178,12 +178,19 @@ class DefaultJinjaView(object):
         tag = template.get("tag", "span")
         template["template"] = template.get("template", "").replace("\n", "<br>")
     
+        top_level_styling = template.get("styling", {})
+    
         if "tooltip" in template:
+            if "classes" in top_level_styling:
+                top_level_styling["classes"].append("cooltip")
+            else:
+                top_level_styling["classes"] = ["cooltip"]
+            
             tooltip_content = template["tooltip"]["content"]
             tooltip_content.replace("\n", "<br>")
             placement = template["tooltip"].get("placement", "top")
             base_template_string = """
-                <{tag} class="cooltip" $styling>
+                <{tag} $styling>
                     $template
                     <span class={placement}>
                         {tooltip_content}
@@ -234,13 +241,13 @@ class DefaultJinjaView(object):
         
             string = pTemplate(
                 pTemplate(base_template_string).substitute(
-                    {"template": template["template"], "styling": self.render_styling(template.get("styling", {}))})
+                    {"template": template["template"], "styling": self.render_styling(top_level_styling)})
             ).substitute(params)
             return string
 
         return pTemplate(
             pTemplate(base_template_string).substitute(
-                {"template": template.get("template", ""), "styling": self.render_styling(template.get("styling", {}))})
+                {"template": template.get("template", ""), "styling": self.render_styling(top_level_styling)})
         ).substitute(template.get("params", {}))
     
     

@@ -11,59 +11,45 @@ MultiBatchNamespaceAwareExpectationDefinedValidationMetric,
 
 
 class MetricsStore(object):
-    def __init__(self):
-        self.single_batch_metrics = []
-        self.dict_single_batch_metrics_by_multi_batch_key_by_batch = {}
+    EXPECTATION_DEFINED_METRICS_LOOKUP_TABLE = {
+        ('expect_column_values_to_not_be_null', 'unexpected_percent'): ('column',), # note: "," is important - it makes it a tuple!
+        ('expect_column_kl_divergence_to_be_less_than', ('details', 'observed_partition', 'bins',)): ('column',),
+        ('expect_column_values_to_be_between', 'unexpected_percent'): ('column', 'min_value', 'max_value'),
+        ('expect_column_values_to_be_in_type_list', 'unexpected_percent'): ('column', 'type_list'),
+        ('expect_column_values_to_be_unique', 'unexpected_percent'): ('column',),
+        ('expect_column_values_to_not_be_null', 'unexpected_percent'): ('column',),
+        ('expect_column_values_to_not_match_regex', 'unexpected_percent'): ('column', 'regex')
+    }
 
+    @classmethod
+    def add_expectation_defined_metric_for_result_key(cls, d, result, data_asset_name, batch_fingerprint, t=()):
+        for key, value in d.items():
+            if isinstance(value, collections.Mapping):
+                cls.add_expectation_defined_metric_for_result_key(value, result, data_asset_name, batch_fingerprint, t + (key,))
+            else:
+                result_key_lookup_key = key if t==() else (t + (key,))
+                full_lookup_key = (result['expectation_config']['expectation_type'], result_key_lookup_key)
+                metric_kwargs_names = cls.EXPECTATION_DEFINED_METRICS_LOOKUP_TABLE.get(full_lookup_key)
+                if metric_kwargs_names:
+                    metric_kwargs = {}
+                    for metric_kwarg_name in metric_kwargs_names:
+                        if isinstance(metric_kwarg_name, tuple):
+                            set_nested_value_in_dict(metric_kwargs, metric_kwarg_name, get_nested_value_from_dict(result['expectation_config']['kwargs'], metric_kwarg_name))
+                        else:
+                            metric_kwargs[metric_kwarg_name] = result['expectation_config']['kwargs'][metric_kwarg_name]
 
-    def add_single_batch_metric(
-        self,
-        data_asset_name,
-        batch_fingerprint,
-        metric_name,
-        metric_kwargs,
-        metric_value):
+                    new_metric = NamespaceAwareExpectationDefinedValidationMetric(
+                        data_asset_name=data_asset_name,
+                        batch_fingerprint=batch_fingerprint,
+                        expectation_type=result['expectation_config']['expectation_type'],
+                        result_key=result_key_lookup_key,
+                        metric_kwargs=metric_kwargs,
+                        metric_value=value)
 
-        new_metric = NamespaceAwareValidationMetric(
-            data_asset_name=data_asset_name,
-            batch_fingerprint=batch_fingerprint,
-            metric_name=metric_name,
-            metric_kwargs=metric_kwargs,
-            metric_value=metric_value)
+                    yield new_metric
 
-        self.single_batch_metrics.append(new_metric)
-
-        batch_metrics = self.dict_single_batch_metrics_by_multi_batch_key_by_batch.get(batch_fingerprint.fingerprint)
-        if not batch_metrics:
-            batch_metrics = {}
-            self.dict_single_batch_metrics_by_multi_batch_key_by_batch[batch_fingerprint.fingerprint] = batch_metrics
-        self.dict_single_batch_metrics_by_multi_batch_key_by_batch[batch_fingerprint.fingerprint][new_metric.multi_batch_key] = new_metric
-
-    def add_single_batch_expectation_defined_metric(
-        self,
-        data_asset_name,
-        batch_fingerprint,
-        expectation_type,
-        result_key,
-        metric_kwargs,
-        metric_value):
-
-        new_metric = NamespaceAwareExpectationDefinedValidationMetric(
-            data_asset_name=data_asset_name,
-            batch_fingerprint=batch_fingerprint,
-            expectation_type=expectation_type,
-            result_key=result_key,
-            metric_kwargs=metric_kwargs,
-            metric_value=metric_value)
-
-        self.single_batch_metrics.append(new_metric)
-        batch_metrics = self.dict_single_batch_metrics_by_multi_batch_key_by_batch.get(batch_fingerprint.fingerprint)
-        if not batch_metrics:
-            batch_metrics = {}
-            self.dict_single_batch_metrics_by_multi_batch_key_by_batch[batch_fingerprint.fingerprint] = batch_metrics
-        self.dict_single_batch_metrics_by_multi_batch_key_by_batch[batch_fingerprint.fingerprint][new_metric.multi_batch_key] = new_metric
-
-    def get_multi_batch_metrics(self, batch_kwargs_list):
+    @classmethod
+    def get_metrics_for_expectation(cls, result, data_asset_name, batch_fingerprint):
         """
         Return a list of multi batch metrics for a list of batches
         :param batch_fingerprints:
@@ -71,6 +57,64 @@ class MetricsStore(object):
                 Values are MultiBatchNamespaceAwareValidationMetric or
                 MultiBatchNamespaceAwareExpectationDefinedValidationMetric
         """
+        expectation_metrics = {
+            'expect_column_distinct_values_to_be_in_set': {
+                'observed_value': 'distinct_set_members'
+            },
+            'expect_column_max_to_be_between': {
+                'observed_value': 'column_max'
+            },
+            'expect_column_mean_to_be_between': {
+                'observed_value': 'column_mean'
+            },
+            'expect_column_median_to_be_between': {
+                'observed_value': 'column_median'
+            },
+            'expect_column_min_to_be_between': {
+                'observed_value': 'column_min'
+            },
+            'expect_column_proportion_of_unique_values_to_be_between': {
+                'observed_value': 'column_proportion_of_unique_values'
+            },
+            'expect_column_quantile_values_to_be_between': {
+                'observed_value': 'column_quantiles'
+            },
+            'expect_column_stdev_to_be_between': {
+                'observed_value': 'column_stdev'
+            },
+            'expect_column_unique_value_count_to_be_between': {
+                'observed_value': 'column_unique_count'
+            },
+            # 'expect_column_values_to_be_in_set',
+            # 'expect_table_columns_to_match_ordered_list',
+            'expect_table_row_count_to_be_between': {
+                'observed_value': 'row_count'
+            }
+        }
+
+        metrics = []
+        if result.get('result'):
+            entry = expectation_metrics.get(result['expectation_config']['expectation_type'])
+            if entry:
+                for key in result['result'].keys():
+                    metric_name = entry.get(key)
+                    if metric_name:
+                        metric_kwargs = {"column": result['expectation_config']['kwargs']['column']} if result['expectation_config'][
+                    'kwargs'].get('column') else {}
+
+                        new_metric = NamespaceAwareValidationMetric(
+                            data_asset_name=data_asset_name,
+                            batch_fingerprint=batch_fingerprint,
+                            expectation_type=result['expectation_config']['expectation_type'],
+                            metric_name=metric_name,
+                            metric_kwargs=metric_kwargs,
+                            metric_value=result['result'][key])
+                        metrics.append(new_metric)
+            else:
+                for new_metric in cls.add_expectation_defined_metric_for_result_key(result['result'], result, data_asset_name, batch_fingerprint):
+                    metrics.append(new_metric)
+
+        return metrics
 
         dict_selected_batches = {}
         for batch_fingerprint, batch_metrics in self.dict_single_batch_metrics_by_multi_batch_key_by_batch.items():

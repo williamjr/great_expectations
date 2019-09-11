@@ -7,10 +7,12 @@ from .renderer import Renderer
 from .column_section_renderer import (
     ProfilingResultsColumnSectionRenderer,
     ExpectationSuiteColumnSectionRenderer,
-    ValidationResultsColumnSectionRenderer
+    ValidationResultsColumnSectionRenderer,
+    MultiBatchMetricsColumnSectionRenderer
 )
 from .other_section_renderer import (
     ProfilingResultsOverviewSectionRenderer,
+    MultiBatchMetricsOverviewSectionRenderer
 )
 from ..types import (
     RenderedDocumentContent,
@@ -349,3 +351,74 @@ class ProfilingResultsPageRenderer(Renderer):
                     ) for column in ordered_columns
                 ]
         })
+
+
+class MultiBatchMetricsPageRenderer(Renderer):
+
+    @classmethod
+    def render(cls, multi_batch_metrics_dict):
+        data_asset_name = list(multi_batch_metrics_dict.values())[0]["data_asset_name"]
+        datasource = data_asset_name.datasource
+        generator = data_asset_name.generator
+        generator_asset = data_asset_name.generator_asset
+
+        batch_fingerprints = list(multi_batch_metrics_dict.values())[0]["batch_fingerprints"]
+
+        data_asset_identifier = "{datasource}/{generator}/{generator_asset}".format(
+            datasource=datasource,
+            generator=generator,
+            generator_asset=generator_asset
+        )
+        
+        sections = [
+            MultiBatchMetricsOverviewSectionRenderer.render(
+                data_asset_name,
+                batch_fingerprints
+            )
+        ]
+
+        non_column_metrics = cls._get_non_column_metrics(multi_batch_metrics_dict)
+        if non_column_metrics:
+            sections.append(
+                MultiBatchMetricsColumnSectionRenderer.render(non_column_metrics)
+            )
+
+        column_names = cls._get_column_names(multi_batch_metrics_dict)
+        for column_name in column_names:
+            column_metrics = cls._get_column_metrics(multi_batch_metrics_dict, column_name)
+            sections.append(
+                MultiBatchMetricsColumnSectionRenderer.render(column_metrics, column_name)
+            )
+        
+        return RenderedDocumentContent(**{
+            "renderer_type": "MultiBatchMetricsPageRenderer",
+            "data_asset_name": generator_asset,
+            "full_data_asset_identifier": data_asset_identifier,
+            "page_title": "MultiBatchProfilingResults",
+            "utm_medium": "multi-batch-profiling-results",
+            "sections": sections
+        })
+
+    @classmethod
+    def _get_column_names(cls, multi_batch_metrics_dict):
+        column_names = [
+            multi_batch_metric_dict['metric_kwargs']['column'] for multi_batch_metric_dict
+            in multi_batch_metrics_dict.values() if multi_batch_metric_dict['metric_kwargs'].get('column')
+        ]
+        column_names = list(set(column_names))
+        column_names.sort()
+        return column_names
+    
+    @classmethod
+    def _get_non_column_metrics(cls, multi_batch_metrics_dict):
+        return [
+            multi_batch_metric for multi_batch_metric in multi_batch_metrics_dict.values()
+            if not multi_batch_metric['metric_kwargs'].get('column')
+        ]
+    
+    @classmethod
+    def _get_column_metrics(cls, multi_batch_metrics_dict, column_name):
+        return [
+            multi_batch_metric for multi_batch_metric in multi_batch_metrics_dict.values()
+            if multi_batch_metric['metric_kwargs'].get('column') == column_name
+        ]

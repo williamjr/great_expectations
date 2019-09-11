@@ -32,6 +32,7 @@ class NamespaceAwareValidationMetric(Metric):
         "batch_fingerprint",
         "metric_name",
         "metric_kwargs",
+        "expectation_type",
         "metric_value"
     }
     _required_keys = {
@@ -39,12 +40,14 @@ class NamespaceAwareValidationMetric(Metric):
         "batch_fingerprint",
         "metric_name",
         "metric_kwargs",
+        "expectation_type",
     }
     _key_types = {
         "data_asset_name": NormalizedDataAssetName,
         "batch_fingerprint": BatchFingerprint,
         "metric_name": string_types,
-        "metric_kwargs": dict
+        "metric_kwargs": dict,
+        "expectation_type": string_types,
     }
 
     @property
@@ -118,6 +121,7 @@ class MultiBatchNamespaceAwareValidationMetric(Metric):
         "data_asset_name",
         "metric_name",
         "metric_kwargs",
+        "expectation_type",
         "batch_fingerprints",
         "batch_metric_values"
     }
@@ -125,6 +129,7 @@ class MultiBatchNamespaceAwareValidationMetric(Metric):
         "data_asset_name",
         "metric_name",
         "metric_kwargs",
+        "expectation_type",
         "batch_fingerprints",
         "batch_metric_values"
     }
@@ -132,6 +137,7 @@ class MultiBatchNamespaceAwareValidationMetric(Metric):
         "data_asset_name": NormalizedDataAssetName,
         "metric_name": string_types,
         "metric_kwargs": dict,
+        "expectation_type": string_types,
         "batch_fingerprints": list,
         "batch_metric_values": list
     }

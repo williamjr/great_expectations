@@ -165,3 +165,43 @@ class MultiBatchValidationMetaAnalysis(object):
         mb_metrics = metrics_store.get_multi_batch_metrics(batch_kwargs_list)
 
         return mb_metrics
+
+    @classmethod
+    def get_batch_id(cls, batch_kwargs):
+        return BatchKwargs.build_batch_id(batch_kwargs)
+
+    @classmethod
+    def make_multi_batch_metric_from_list_of_single_batch_metrics(cls, single_batch_metric_name, single_batch_metric_list, batch_index):
+        """
+        Utility method that gets a list of single batch metrics with the same multi-batch key (meaning that they are the same
+        metric with the same kwargs, but obtained by validating different batches of the same data asset) and
+        constructs a multi-batch metric for that key.
+
+        :param single_batch_metric_name:
+        :param single_batch_metric_list:
+        :param batch_index:
+        :return:
+        """
+        first_non_null_single_batch_metric = [item for item in single_batch_metric_list if item is not None][0]
+
+        if 'NamespaceAwareValidationMetric' == single_batch_metric_name:
+                mb_metric = MultiBatchNamespaceAwareValidationMetric(
+                    data_asset_name=first_non_null_single_batch_metric.data_asset_name,
+                    metric_name=first_non_null_single_batch_metric.metric_name,
+                    metric_kwargs=first_non_null_single_batch_metric.metric_kwargs,
+                    expectation_type=first_non_null_single_batch_metric.expectation_type,
+                    batch_fingerprints=batch_index,
+                    batch_metric_values=[None if metric is None else metric.metric_value for metric in
+                                         single_batch_metric_list]
+                )
+        elif 'NamespaceAwareExpectationDefinedValidationMetric' == single_batch_metric_name:
+                mb_metric = MultiBatchNamespaceAwareExpectationDefinedValidationMetric(
+                    data_asset_name = first_non_null_single_batch_metric.data_asset_name,
+                    result_key = first_non_null_single_batch_metric.result_key,
+                    expectation_type = first_non_null_single_batch_metric.expectation_type,
+                    metric_kwargs = first_non_null_single_batch_metric.metric_kwargs,
+                    batch_fingerprints = batch_index,
+                    batch_metric_values = [None if metric is None else metric.metric_value for metric in single_batch_metric_list]
+                )
+
+        return mb_metric
