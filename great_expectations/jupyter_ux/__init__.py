@@ -1,6 +1,6 @@
 """Utility functions for working with great_expectations within jupyter notebooks or jupyter lab.
 """
-
+import json
 import logging
 import sys
 
@@ -9,7 +9,7 @@ from datetime import datetime
 
 import tzlocal
 from IPython.core.display import display, HTML
-
+import altair as alt
 
 def set_data_source(context, data_source_type=None):
     """
@@ -200,6 +200,38 @@ cooltip_style_element = """<style type="text/css">
 </style>
 """
 
+def get_column_expectations_as_strings(
+    expectation_suite,
+    column
+):
+    """This is a utility function to render all of the Expectations in an ExpectationSuite with the same column name as an HTML block.
+
+    By default, the HTML block is rendered using ExpectationSuiteColumnSectionRenderer and the view is rendered using DefaultJinjaSectionView.
+    Therefore, it should look exactly the same as the default renderer for build_docs.
+
+    Example usage:
+    exp = context.get_expectation_suite("notable_works_by_charles_dickens", "BasicDatasetProfiler")
+    display_column_expectations_as_section(exp, "Type")
+    """
+
+    #TODO: replace this with a generic utility function, preferably a method on an ExpectationSuite class
+    column_expectation_list = [ e for e in expectation_suite["expectations"] if "column" in e["kwargs"] and e["kwargs"]["column"] == column ]
+
+    #TODO: Handle the case where zero evrs match the column name
+
+    document = render.renderer.ExpectationSuiteColumnSectionRenderer().render(column_expectation_list)
+    content_blocks = document["content_blocks"]
+    bullet_list = [content_block for content_block in content_blocks if content_block["content_block_type"] == "bullet_list"][0]
+    string_blocks = bullet_list["bullet_list"]
+    string_templates = [string_block["string_template"] for string_block in string_blocks]
+    
+    for string_template in string_templates:
+        string_template["styling"] = {}
+    
+    html_list = [render.view.view.DefaultJinjaView().render_string_template(string_template) for string_template in string_templates]
+    
+    for html in html_list:
+        display(HTML(html))
 
 def display_column_expectations_as_section(
     expectation_suite,
@@ -266,6 +298,20 @@ def display_column_evrs_as_section(
     #TODO: Handle the case where zero evrs match the column name
 
     document = render.renderer.ProfilingResultsColumnSectionRenderer().render(column_evr_list)
+    
+    content_blocks = document["content_blocks"]
+    non_graph_content_blocks = [content_block for content_block in content_blocks if
+                                content_block["content_block_type"] != "graph"]
+    document["content_blocks"] = non_graph_content_blocks
+    graph_content_blocks = [content_block for content_block in content_blocks if
+              content_block["content_block_type"] == "graph"]
+    graph_headers = [content_block.get("header", {}).get("template", "") for content_block in graph_content_blocks]
+    graph_dicts = [json.loads(content_block["graph"]) for content_block in graph_content_blocks]
+    for idx, graph_dict in enumerate(graph_dicts):
+        graph_dict["title"] = graph_headers[idx]
+
+    altair_charts = [alt.Chart(**graph_dict).configure_title(fontSize=16) for graph_dict in graph_dicts]
+
     view = render.view.DefaultJinjaSectionView().render(
         render.types.RenderedComponentContentWrapper(**{
             "section": document,
@@ -279,9 +325,11 @@ def display_column_evrs_as_section(
         html_to_display = view
 
     if return_without_displaying:
-        return html_to_display
+        return (html_to_display, altair_charts)
     else:
         display(HTML(html_to_display))
+        for altair_chart in altair_charts:
+            display(altair_chart)
 
 
 # When importing the jupyter_ux module, we set up a preferred logging configuration
