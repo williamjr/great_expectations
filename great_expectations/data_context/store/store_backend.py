@@ -136,9 +136,8 @@ class InMemoryStoreBackend(StoreBackend):
 
 class FixedLengthTupleStoreBackend(StoreBackend):
     """
-
-    The key to this StoreBackend abstract class must be a tuple with fixed length equal to key_length.
-    The filepath_template is a string template used to convert the key to a filepath.
+    If key_length is provided, the key to this StoreBackend abstract class must be a tuple with fixed length equal
+    to key_length. The filepath_template is a string template used to convert the key to a filepath.
     There's a bit of regex magic in _convert_filepath_to_key that reverses this process,
     so that we can write AND read using filenames as keys.
 
@@ -151,14 +150,19 @@ class FixedLengthTupleStoreBackend(StoreBackend):
         filepath_template,
         key_length,
         root_directory,
-        forbidden_substrings=["/", "\\"],
+        forbidden_substrings=None,
+        platform_specific_separator=True
     ):
-        assert isinstance(key_length, int)
+        assert isinstance(key_length, int) or key_length is None
         self.key_length = key_length
+        if forbidden_substrings is None:
+            forbidden_substrings = ["/", "\\"]
         self.forbidden_substrings = forbidden_substrings
+        self.platform_specific_separator = platform_specific_separator
 
         self.filepath_template = filepath_template
-        self.verify_that_key_to_filepath_operation_is_reversible()
+        if key_length:
+            self.verify_that_key_to_filepath_operation_is_reversible()
 
     def _validate_key(self, key):
         super(FixedLengthTupleStoreBackend, self)._validate_key(key)
@@ -173,37 +177,49 @@ class FixedLengthTupleStoreBackend(StoreBackend):
                     ))
 
     def _validate_value(self, value):
-        # NOTE: We may want to allow bytes here as well.
-
-        if not isinstance(value, string_types):
-            raise TypeError("Values in {0} must be instances of {1}, not {2}".format(
+        if not isinstance(value, string_types) and not isinstance(value, bytes):
+            raise TypeError("Values in {0} must be instances of {1} or {2}, not {3}".format(
                 self.__class__.__name__,
                 string_types,
+                bytes,
                 type(value),
             ))
-
 
     def _convert_key_to_filepath(self, key):
         # NOTE: At some point in the future, it might be better to replace this logic with os.path.join.
         # That seems more correct, but the configs will be a lot less intuitive.
         # In the meantime, there is some chance that configs will not be cross-OS compatible.
 
-        # NOTE : These methods support fixed-length keys, but not variable.
+        # NOTE : These methods support variable-length keys if no filepath template is provided, in which case
+        # all key elements are joined to generate the filepath
         self._validate_key(key)
-
-        converted_string = self.filepath_template.format(*list(key))
-
+        if self.filepath_template:
+            converted_string = self.filepath_template.format(*list(key))
+        else:
+            converted_string = '/'.join(key)
+        if self.platform_specific_separator:
+            converted_string = os.path.join(*converted_string.split('/'))
         return converted_string
 
     def _convert_filepath_to_key(self, filepath):
+        # filepath_template (for now) is always specified with forward slashes, but it is then
+        # used to (1) dynamically construct and evaluate a regex, and (2) split the provided (observed) filepath
+        if not self.filepath_template:
+            return tuple(filepath.split(os.sep))
+        
+        if self.platform_specific_separator:
+            filepath_template = os.path.join(*self.filepath_template.split('/'))
+            filepath_template = filepath_template.replace('\\', '\\\\')
+        else:
+            filepath_template = self.filepath_template
 
         # Convert the template to a regex
-        indexed_string_substitutions = re.findall("\{\d+\}", self.filepath_template)
+        indexed_string_substitutions = re.findall(r"{\d+}", filepath_template)
         tuple_index_list = ["(?P<tuple_index_{0}>.*)".format(i, ) for i in range(len(indexed_string_substitutions))]
         intermediate_filepath_regex = re.sub(
-            "\{\d+\}",
+            r"{\d+}",
             lambda m, r=iter(tuple_index_list): next(r),
-            self.filepath_template
+            filepath_template
         )
         filepath_regex = intermediate_filepath_regex.format(*tuple_index_list)
 
@@ -212,8 +228,7 @@ class FixedLengthTupleStoreBackend(StoreBackend):
         if matches is None:
             return None
 
-        #Map key elements into the appropriate parts of the tuple
-        # TODO: A common configuration error is for the key length to not match the number of elements in the filepath_template. We should trap this error and add a more informative message.
+        # Map key elements into the appropriate parts of the tuple
         new_key = list([None for element in range(self.key_length)])
         for i in range(len(tuple_index_list)):
             tuple_index = int(re.search('\d+', indexed_string_substitutions[i]).group(0))
@@ -224,12 +239,6 @@ class FixedLengthTupleStoreBackend(StoreBackend):
         return new_key
 
     def verify_that_key_to_filepath_operation_is_reversible(self):
-        # NOTE: There's actually a fairly complicated problem here, similar to magic autocomplete for dataAssetNames.
-        # "Under what conditions does an incomplete key tuple fully specify an object within the GE namespace?"
-        # This doesn't just depend on the structure of keys.
-        # It also depends on uniqueness of combinations of named elements within the namespace tree.
-        # For now, I do the blunt thing and force filepaths to fully specify keys.
-
         def get_random_hex(len=4):
             return "".join([random.choice(list("ABCDEF0123456789")) for i in range(len)])
 
@@ -243,10 +252,6 @@ class FixedLengthTupleStoreBackend(StoreBackend):
                     self.__class__.__name__,
                     self.key_length,
                 ))
-            # raise AssertionError("Cannot reverse key conversion in {}\nThis is most likely a problem with your filepath_template:\n\t{}".format(
-            #     self.__class__.__name__,
-            #     self.filepath_template
-            # ))
 
 
 class FixedLengthTupleFilesystemStoreBackend(FixedLengthTupleStoreBackend):
@@ -264,13 +269,15 @@ class FixedLengthTupleFilesystemStoreBackend(FixedLengthTupleStoreBackend):
         filepath_template,
         key_length,
         root_directory,
-        forbidden_substrings=["/", "\\"],
+        forbidden_substrings=None,
+        platform_specific_separator=True
     ):
         super(FixedLengthTupleFilesystemStoreBackend, self).__init__(
             root_directory=root_directory,
             filepath_template=filepath_template,
             key_length=key_length,
             forbidden_substrings=forbidden_substrings,
+            platform_specific_separator=platform_specific_separator
         )
 
         self.base_directory = base_directory
@@ -292,7 +299,7 @@ class FixedLengthTupleFilesystemStoreBackend(FixedLengthTupleStoreBackend):
             self.full_base_directory,
             self._convert_key_to_filepath(key)
         )
-        with open(filepath) as infile:
+        with open(filepath, 'r') as infile:
             return infile.read()
 
     def _set(self, key, value, **kwargs):
@@ -304,7 +311,10 @@ class FixedLengthTupleFilesystemStoreBackend(FixedLengthTupleStoreBackend):
 
         safe_mmkdir(str(path))
         with open(filepath, "wb") as outfile:
-            outfile.write(value.encode("utf-8"))
+            if isinstance(value, bytes):
+                outfile.write(value)
+            else:
+                outfile.write(value.encode("utf-8"))
         return filepath
 
     def list_keys(self):
@@ -352,18 +362,23 @@ class FixedLengthTupleS3StoreBackend(FixedLengthTupleStoreBackend):
         filepath_template,
         key_length,
         bucket,
-        prefix,
-        forbidden_substrings=["/", "\\"],
+        prefix="",
+        boto3_options=None,
+        forbidden_substrings=None,
+        platform_specific_separator=False
     ):
         super(FixedLengthTupleS3StoreBackend, self).__init__(
             root_directory=root_directory,
             filepath_template=filepath_template,
             key_length=key_length,
             forbidden_substrings=forbidden_substrings,
+            platform_specific_separator=platform_specific_separator
         )
         self.bucket = bucket
         self.prefix = prefix
-
+        if boto3_options is None:
+            boto3_options = {}
+        self._boto3_options = boto3_options
 
     def _get(self, key):
         s3_object_key = os.path.join(
@@ -372,27 +387,31 @@ class FixedLengthTupleS3StoreBackend(FixedLengthTupleStoreBackend):
         )
 
         import boto3
-        s3 = boto3.client('s3')
+        s3 = boto3.client('s3', **self._boto3_options)
         s3_response_object = s3.get_object(Bucket=self.bucket, Key=s3_object_key)
-        return s3_response_object['Body'].read()
+        return s3_response_object['Body'].read().decode(s3_response_object.get("ContentEncoding", 'utf-8'))
 
-    def _set(self, key, value, content_encoding='utf-8', content_type='application/json'):
+    def _set(self, key, value, content_encoding='utf-8', content_type='application/json', **kwargs):
         s3_object_key = os.path.join(
             self.prefix,
             self._convert_key_to_filepath(key)
         )
 
         import boto3
-        s3 = boto3.resource('s3')
+        s3 = boto3.resource('s3', **self._boto3_options)
         result_s3 = s3.Object(self.bucket, s3_object_key)
-        result_s3.put(Body=value.encode(content_encoding), ContentEncoding=content_encoding, ContentType=content_type)
+        if isinstance(value, string_types):
+            result_s3.put(Body=value.encode(content_encoding), ContentEncoding=content_encoding,
+                          ContentType=content_type)
+        else:
+            result_s3.put(Body=value, ContentType=content_type)
         return s3_object_key
 
     def list_keys(self):
         key_list = []
 
         import boto3
-        s3 = boto3.client('s3')
+        s3 = boto3.client('s3', **self._boto3_options)
 
         for s3_object_info in s3.list_objects(Bucket=self.bucket, Prefix=self.prefix)['Contents']:
             s3_object_key = s3_object_info['Key']
@@ -413,3 +432,93 @@ class FixedLengthTupleS3StoreBackend(FixedLengthTupleStoreBackend):
         all_keys = self.list_keys()
         return key in all_keys
 
+
+class FixedLengthTupleGCSStoreBackend(FixedLengthTupleStoreBackend):
+    """
+    Uses a GCS bucket as a store.
+
+    The key to this StoreBackend must be a tuple with fixed length equal to key_length.
+    The filepath_template is a string template used to convert the key to a filepath.
+    There's a bit of regex magic in _convert_filepath_to_key that reverses this process,
+    so that we can write AND read using filenames as keys.
+    """
+    def __init__(
+        self,
+        root_directory,
+        filepath_template,
+        key_length,
+        bucket,
+        prefix,
+        project,
+        forbidden_substrings=None,
+        platform_specific_separator=False
+    ):
+        super(FixedLengthTupleGCSStoreBackend, self).__init__(
+            root_directory=root_directory,
+            filepath_template=filepath_template,
+            key_length=key_length,
+            forbidden_substrings=forbidden_substrings,
+            platform_specific_separator=platform_specific_separator
+        )
+        self.bucket = bucket
+        self.prefix = prefix
+        self.project = project
+
+
+    def _get(self, key):
+        gcs_object_key = os.path.join(
+            self.prefix,
+            self._convert_key_to_filepath(key)
+        )
+
+        from google.cloud import storage
+        gcs = storage.Client(project=self.project)
+        bucket = gcs.get_bucket(self.bucket)
+        gcs_response_object = bucket.get_blob(gcs_object_key)
+        return gcs_response_object.download_as_string().decode("utf-8")
+
+    def _set(self, key, value, content_encoding='utf-8', content_type='application/json', **kwargs):
+        gcs_object_key = os.path.join(
+            self.prefix,
+            self._convert_key_to_filepath(key)
+        )
+
+        from google.cloud import storage
+        gcs = storage.Client(project=self.project)
+        bucket = gcs.get_bucket(self.bucket)
+        blob = bucket.blob(gcs_object_key)
+        if isinstance(value, string_types):
+            # Following try/except is to support py2, since both str and bytes objects pass above condition
+            try:
+                blob.upload_from_string(value.encode(content_encoding), content_encoding=content_encoding,
+                                        content_type=content_type)
+            except TypeError:
+                blob.upload_from_string(value, content_type=content_type)
+        else:
+            blob.upload_from_string(value, content_type=content_type)
+        return gcs_object_key
+
+    def list_keys(self):
+        key_list = []
+
+        from google.cloud import storage
+        gcs = storage.Client(self.project)
+
+        for blob in gcs.list_blobs(self.bucket, prefix=self.prefix):
+            gcs_object_name = blob.name
+            gcs_object_key = os.path.relpath(
+                gcs_object_name,
+                self.prefix,
+            )
+
+            key = self._convert_filepath_to_key(gcs_object_key)
+            if key:
+                key_list.append(key)
+
+        return key_list
+
+    def has_key(self, key):
+        assert isinstance(key, string_types)
+
+        all_keys = self.list_keys()
+        return key in all_keys

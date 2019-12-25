@@ -2,9 +2,6 @@ import time
 import hashlib
 import logging
 
-# from builtins import str
-from six import string_types
-
 try:
     from io import StringIO
 except ImportError:
@@ -25,14 +22,11 @@ from great_expectations.datasource.types import (
 from great_expectations.dataset.pandas_dataset import PandasDataset
 from great_expectations.types import ClassConfig
 from great_expectations.exceptions import BatchKwargsError
+from .util import S3Url
 
 logger = logging.getLogger(__name__)
 
 HASH_THRESHOLD = 1e9
-
-from .util import S3Url
-
-logger = logging.getLogger(__name__)
 
 
 class PandasDatasource(Datasource):
@@ -42,13 +36,14 @@ class PandasDatasource(Datasource):
     """
 
     @classmethod
-    def build_configuration(cls, data_asset_type=None, generators=None, **kwargs):
+    def build_configuration(cls, data_asset_type=None, generators=None, boto3_options=None, **kwargs):
         """
         Build a full configuration object for a datasource, potentially including generators with defaults.
 
         Args:
             data_asset_type: A ClassConfig dictionary
             generators: Generator configuration dictionary
+            boto3_options: Optional dictionary with key-value pairs to pass to boto3 during instantiation.
             **kwargs: Additional kwargs to be part of the datasource constructor's initialization
 
         Returns:
@@ -58,7 +53,7 @@ class PandasDatasource(Datasource):
         if generators is None:
             # Provide a gentle way to build a datasource with a sane default,
             # including ability to specify the base_directory and reader_options
-            base_directory = kwargs.pop("base_directory", "/data")
+            base_directory = kwargs.pop("base_directory", "data")
             # By default, use CSV sniffer to infer separator, which requires the python engine
             reader_options = kwargs.pop("reader_options", {
                 "sep": None,
@@ -86,10 +81,18 @@ class PandasDatasource(Datasource):
             "data_asset_type": data_asset_type,
             "generators": generators,
         })
+        if boto3_options is not None:
+            if isinstance(boto3_options, dict):
+                configuration.update(boto3_options)
+            else:
+                raise ValueError("boto3_options must be a dictionary of key-value pairs to pass to boto3 upon "
+                                 "initialization.")
         return configuration
 
-    def __init__(self, name="pandas", data_context=None, data_asset_type=None, generators=None, **kwargs):
-        configuration_with_defaults = PandasDatasource.build_configuration(data_asset_type, generators, **kwargs)
+    def __init__(self, name="pandas", data_context=None, data_asset_type=None, generators=None,
+                 boto3_options=None, **kwargs):
+        configuration_with_defaults = PandasDatasource.build_configuration(data_asset_type, generators,
+                                                                           boto3_options, **kwargs)
         data_asset_type = configuration_with_defaults.pop("data_asset_type")
         generators = configuration_with_defaults.pop("generators")
         super(PandasDatasource, self).__init__(name,
@@ -98,6 +101,7 @@ class PandasDatasource(Datasource):
                                                generators=generators,
                                                **configuration_with_defaults)
         self._build_generators()
+        self._boto3_options = configuration_with_defaults.get("boto3_options", {})
 
     def _get_generator_class_from_type(self, type_):
         if type_ == "subdir_reader":
@@ -112,13 +116,21 @@ class PandasDatasource(Datasource):
             raise ValueError("Unrecognized BatchGenerator type %s" % type_)
 
     def _get_data_asset(self, batch_kwargs, expectation_suite, **kwargs):
-        batch_kwargs.update(kwargs)
+        for k, v in kwargs.items():
+            if isinstance(v, dict):
+                if k in batch_kwargs and isinstance(batch_kwargs[k], dict):
+                    batch_kwargs[k].update(v)
+                else:
+                    batch_kwargs[k] = v
+            else:
+                batch_kwargs[k] = v
         # pandas cannot take unicode as a delimiter, which can happen in py2. Handle this case explicitly.
         # We handle it here so that the updated value will be in the batch_kwargs for transparency to the user.
-        if PY2 and "sep" in batch_kwargs and batch_kwargs["sep"] is not None:
-            batch_kwargs["sep"] = str(batch_kwargs["sep"])
+        if PY2 and "reader_options" in batch_kwargs and "sep" in batch_kwargs['reader_options'] and \
+                batch_kwargs['reader_options']['sep'] is not None:
+            batch_kwargs['reader_options']['sep'] = str(batch_kwargs['reader_options']['sep'])
         # We will use and manipulate reader_options along the way
-        reader_options = batch_kwargs.copy()
+        reader_options = batch_kwargs.get("reader_options", {})
 
         # We need to build a batch_id to be used in the dataframe
         batch_id = BatchId({
@@ -141,12 +153,12 @@ class PandasDatasource(Datasource):
             raise ValueError("PandasDatasource cannot instantiate batch with data_asset_type: '%s'. It "
                              "must be a subclass of PandasDataset." % data_asset_type.__name__)
 
-        if "path" in batch_kwargs:
-            path = reader_options.pop("path")  # We remove this so it is not used as a reader option
-            reader_options.pop("timestamp", "")    # ditto timestamp (but missing ok)
-            reader_options.pop("partition_id", "")
+        if "limit" in batch_kwargs:
+            reader_options['nrows'] = batch_kwargs['limit']
 
-            reader_method = reader_options.pop("reader_method", None)
+        if "path" in batch_kwargs:
+            path = batch_kwargs['path']
+            reader_method = batch_kwargs.get("reader_method")
             reader_fn, reader_fn_options = self._get_reader_fn(reader_method, path, reader_options)
             try:
                 df = getattr(pd, reader_fn)(path, **reader_fn_options)
@@ -156,12 +168,11 @@ class PandasDatasource(Datasource):
         elif "s3" in batch_kwargs:
             try:
                 import boto3
-                s3 = boto3.client("s3")
+                s3 = boto3.client("s3", **self._boto3_options)
             except ImportError:
                 raise BatchKwargsError("Unable to load boto3 client to read s3 asset.", batch_kwargs)
-            raw_url = reader_options.pop("s3")  # We need to remove from the reader
-            reader_options.pop("timestamp", "")  # ditto timestamp (but missing ok)
-            reader_method = reader_options.pop("reader_method", None)
+            raw_url = batch_kwargs["s3"]
+            reader_method = batch_kwargs.get("reader_method")
             url = S3Url(raw_url)
             logger.debug("Fetching s3 object. Bucket: %s Key: %s" % (url.bucket, url.key))
             s3_object = s3.get_object(Bucket=url.bucket, Key=url.key)
@@ -178,7 +189,9 @@ class PandasDatasource(Datasource):
                 raise
 
         elif "dataset" in batch_kwargs and isinstance(batch_kwargs["dataset"], (pd.DataFrame, pd.Series)):
-            df = batch_kwargs.pop("dataset")  # We don't want to store the actual dataframe in kwargs
+            df = batch_kwargs.get("dataset")
+            # We don't want to store the actual dataframe in kwargs; copy the remaining batch_kwargs
+            batch_kwargs = {k: batch_kwargs[k] for k in batch_kwargs if k != 'dataset'}
             # Record this in the kwargs *and* the id
             batch_kwargs["PandasInMemoryDF"] = True
             batch_id["PandasInMemoryDF"] = True

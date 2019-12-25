@@ -1,5 +1,4 @@
 import os
-import time
 import glob
 import re
 import datetime
@@ -41,18 +40,20 @@ class GlobReaderGenerator(BatchGenerator):
               reader_options:
                 sep: %
                 header: 0
+              reader_method: csv
               asset_globs:
                 wifi_logs:
                   glob: wifi*.log
                   partition_regex: wifi-((0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])-20\d\d).*\.log
-
+                  reader_method: csv
     """
 
     def __init__(self, name="default",
                  datasource=None,
                  base_directory="/data",
                  reader_options=None,
-                 asset_globs=None):
+                 asset_globs=None,
+                 reader_method=None):
         logger.debug("Constructing GlobReaderGenerator {!r}".format(name))
         super(GlobReaderGenerator, self).__init__(name, datasource=datasource)
         if reader_options is None:
@@ -63,13 +64,15 @@ class GlobReaderGenerator(BatchGenerator):
                 "default": {
                     "glob": "*",
                     "partition_regex": r"^((19|20)\d\d[- /.]?(0[1-9]|1[012])[- /.]?(0[1-9]|[12][0-9]|3[01])_(.*))\.csv",
-                    "match_group_id": 1
+                    "match_group_id": 1,
+                    "reader_method": 'csv'
                 }
             }
 
         self._base_directory = base_directory
         self._reader_options = reader_options
         self._asset_globs = asset_globs
+        self._reader_method = reader_method
 
     @property
     def reader_options(self):
@@ -78,6 +81,10 @@ class GlobReaderGenerator(BatchGenerator):
     @property
     def asset_globs(self):
         return self._asset_globs
+
+    @property
+    def reader_method(self):
+        return self._reader_method
 
     @property
     def base_directory(self):
@@ -108,7 +115,7 @@ class GlobReaderGenerator(BatchGenerator):
         ]
         return partition_ids
 
-    def build_batch_kwargs_from_partition_id(self, generator_asset, partition_id=None, batch_kwargs=None, **kwargs):
+    def build_batch_kwargs_from_partition_id(self, generator_asset, partition_id=None, reader_options=None, limit=None):
         """Build batch kwargs from a partition id."""
         glob_config = self._get_generator_asset_config(generator_asset)
         batch_paths = self._get_generator_asset_paths(generator_asset)
@@ -119,12 +126,9 @@ class GlobReaderGenerator(BatchGenerator):
                                         generator_asset: generator_asset,
                                         partition_id: partition_id
                                     })
-        new_kwargs = self._build_batch_kwargs_from_path(path[0], glob_config)
-        if batch_kwargs is not None:
-            new_kwargs.update(batch_kwargs)
-        if kwargs is not None:
-            new_kwargs.update(kwargs)
-        return new_kwargs
+        batch_kwargs = self._build_batch_kwargs_from_path(path[0], glob_config, reader_options=reader_options,
+                                                          limit=limit, partition_id=partition_id)
+        return batch_kwargs
 
     def _get_generator_asset_paths(self, generator_asset):
         """
@@ -155,30 +159,50 @@ class GlobReaderGenerator(BatchGenerator):
             glob_config = self.asset_globs[generator_asset]
         return glob_config
 
-    def _get_iterator(self, generator_asset, **kwargs):
+    def _get_iterator(self, generator_asset, reader_options=None, limit=None):
         glob_config = self._get_generator_asset_config(generator_asset)
         paths = glob.glob(os.path.join(self.base_directory, glob_config["glob"]))
-        return self._build_batch_kwargs_path_iter(paths, glob_config)
+        return self._build_batch_kwargs_path_iter(paths, glob_config, reader_options=reader_options, limit=limit)
 
-    def _build_batch_kwargs_path_iter(self, path_list, glob_config):
+    def _build_batch_kwargs_path_iter(self, path_list, glob_config, reader_options=None, limit=None):
         for path in path_list:
-            yield self._build_batch_kwargs_from_path(path, glob_config)
+            yield self._build_batch_kwargs_from_path(path, glob_config, reader_options=reader_options, limit=limit)
 
-    def _build_batch_kwargs_from_path(self, path, glob_config):
+    def _build_batch_kwargs_from_path(self, path, glob_config, reader_options=None, limit=None, partition_id=None):
         # We could add MD5 (e.g. for smallish files)
         # but currently don't want to assume the extra read is worth it
         # unless it's configurable
         # with open(path,'rb') as f:
         #     md5 = hashlib.md5(f.read()).hexdigest()
         batch_kwargs = PathBatchKwargs({
-            "path": path,
-            "timestamp": time.time()
+            "path": path
         })
-        partition_id = self._partitioner(path, glob_config)
-        if partition_id is not None:
-            batch_kwargs.update({"partition_id": partition_id})
+        computed_partition_id = self._partitioner(path, glob_config)
+        if partition_id and computed_partition_id:
+            if partition_id != computed_partition_id:
+                logger.warning("Provided partition_id does not match computed partition_id; consider explicitly "
+                               "defining the asset or updating your partitioner.")
+            batch_kwargs["partition_id"] = partition_id
+        elif partition_id:
+            batch_kwargs["partition_id"] = partition_id
+        elif computed_partition_id:
+            batch_kwargs["partition_id"] = computed_partition_id
 
-        batch_kwargs.update(self.reader_options)
+        # Apply globally-configured reader options first
+        batch_kwargs['reader_options'] = self.reader_options
+        if reader_options:
+            # Then update with any locally-specified reader options
+            batch_kwargs['reader_options'].update(reader_options)
+
+        if limit is not None:
+            batch_kwargs['limit'] = limit
+
+        if self.reader_method is not None:
+            batch_kwargs['reader_method'] = self.reader_method
+        
+        if glob_config.get("reader_method"):
+            batch_kwargs['reader_method'] = glob_config.get("reader_method")
+
         return batch_kwargs
 
     def _partitioner(self, path, glob_config):

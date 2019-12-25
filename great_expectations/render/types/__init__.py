@@ -37,6 +37,7 @@ class RenderedSectionContent(RenderedContent):
     _allowed_keys = set([
         "section_name",
         "content_blocks",
+        "styling"
     ])
     _required_keys = set({
         "content_blocks",
@@ -53,6 +54,7 @@ class RenderedDocumentContent(RenderedContent):
         "page_title",
         "utm_medium",
         "sections",
+        "cta_footer"
     ])
     _required_keys = set({
         "sections"

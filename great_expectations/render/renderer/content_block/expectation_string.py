@@ -31,26 +31,6 @@ def substitute_none_for_missing(kwargs, kwarg_list):
 
 
 class ExpectationStringRenderer(ContentBlockRenderer):
-    # Unicode: 9601, 9602, 9603, 9604, 9605, 9606, 9607, 9608
-    bar = u'▁▂▃▄▅▆▇█'
-    barcount = len(bar)
-
-    @classmethod
-    def sparkline(cls, weights):
-        """Builds a unicode-text based sparkline for the provided histogram.
-
-        Code from https://rosettacode.org/wiki/Sparkline_in_unicode#Python
-        """
-        mn, mx = min(weights), max(weights)
-        extent = mx - mn
-        
-        if extent == 0:
-            extent = 1
-
-        sparkline = u''.join(cls.bar[min([cls.barcount - 1,
-                                         int((n - mn) / extent * cls.barcount)])]
-                            for n in weights)
-        return sparkline, mn, mx
 
     @classmethod
     def _missing_content_block_fn(cls, expectation, styling=None, include_column_name=True):
@@ -269,8 +249,9 @@ class ExpectationStringRenderer(ContentBlockRenderer):
                 template_str += "$column_list_" + str(idx) + ", "
                 params["column_list_" + str(idx)] = params["column_list"][idx]
             
-            template_str += "$column_list_" + str(idx + 1)
-            params["column_list_" + str(idx + 1)] = params["column_list"][idx + 1]
+            last_idx = len(params["column_list"]) - 1
+            template_str += "$column_list_" + str(last_idx)
+            params["column_list_" + str(last_idx)] = params["column_list"][last_idx]
         
         return [{
             "content_block_type": "string_template",
@@ -293,8 +274,9 @@ class ExpectationStringRenderer(ContentBlockRenderer):
             template_str += "$column_list_" + str(idx) + ", "
             params["column_list_" + str(idx)] = params["column_list"][idx]
         
-        template_str += "$column_list_" + str(idx + 1)
-        params["column_list_" + str(idx + 1)] = params["column_list"][idx + 1]
+        last_idx = len(params["column_list"]) - 1
+        template_str += "$column_list_" + str(last_idx)
+        params["column_list_" + str(last_idx)] = params["column_list"][last_idx]
         
         return [{
             "content_block_type": "string_template",
@@ -637,14 +619,14 @@ class ExpectationStringRenderer(ContentBlockRenderer):
         )
         
         if params["min_value"] is None and params["max_value"] is None:
-            template_str = "may have any percentage of unique values."
+            template_str = "may have any fraction of unique values."
         else:
             if params["min_value"] is None:
-                template_str = "must have no more than $max_value% unique values."
+                template_str = "fraction of unique values must be less than $max_value."
             elif params["max_value"] is None:
-                template_str = "must have at least $min_value% unique values."
+                template_str = "fraction of unique values must be at least $min_value."
             else:
-                template_str = "must have between $min_value and $max_value% unique values."
+                template_str = "fraction of unique values must be between $min_value and $max_value."
         
         if include_column_name:
             template_str = "$column " + template_str
@@ -1346,6 +1328,66 @@ class ExpectationStringRenderer(ContentBlockRenderer):
         }]
     
     @classmethod
+    def expect_column_quantile_values_to_be_between(cls, expectation, styling=None, include_column_name=True):
+        params = substitute_none_for_missing(
+            expectation["kwargs"],
+            ["column", "quantile_ranges"]
+        )
+        template_str = "Column quantiles must be within the following value ranges:\n\n"
+
+        if include_column_name:
+            template_str = "$column " + template_str
+
+        expectation_string_obj = {
+            "content_block_type": "string_template",
+            "string_template": {
+                "template": template_str,
+                "params": params
+            }
+        }
+
+        quantiles = params["quantile_ranges"]["quantiles"]
+        value_ranges = params["quantile_ranges"]["value_ranges"]
+
+        table_header_row = ["Quantile", "Min Value", "Max Value"]
+        table_rows = []
+
+        quantile_strings = {
+            .25: "Q1",
+            .75: "Q3",
+            .50: "Median"
+        }
+
+        for idx, quantile in enumerate(quantiles):
+            quantile_string = quantile_strings.get(quantile)
+            table_rows.append([
+                quantile_string if quantile_string else "{:3.2f}".format(quantile),
+                str(value_ranges[idx][0]) if value_ranges[idx][0] else "Any",
+                str(value_ranges[idx][1]) if value_ranges[idx][1] else "Any",
+            ])
+
+        quantile_range_table = {
+            "content_block_type": "table",
+            "header_row": table_header_row,
+            "table": table_rows,
+            "styling": {
+                "body": {
+                    "classes": ["table", "table-sm", "table-unbordered", "col-4"],
+                },
+                "parent": {
+                    "styles": {
+                        "list-style-type": "none"
+                    }
+                }
+            }
+        }
+
+        return [
+            expectation_string_obj,
+            quantile_range_table
+        ]
+
+    @classmethod
     def expect_column_kl_divergence_to_be_less_than(cls, expectation, styling=None, include_column_name=True):
         params = substitute_none_for_missing(
             expectation["kwargs"],
@@ -1377,14 +1419,13 @@ class ExpectationStringRenderer(ContentBlockRenderer):
                 df = pd.DataFrame({
                     "bin_min": bins_x1,
                     "bin_max": bins_x2,
-                    "weights": weights,
+                    "fraction": weights,
                 })
-                df.weights *= 100
-    
+
                 bars = alt.Chart(df).mark_bar().encode(
                     x='bin_min:O',
                     x2='bin_max:O',
-                    y="weights:Q"
+                    y="fraction:Q"
                 ).properties(width=width, height=height, autosize="fit")
     
                 chart = bars.to_json()
@@ -1393,13 +1434,12 @@ class ExpectationStringRenderer(ContentBlockRenderer):
                 
                 df = pd.DataFrame({
                     "values": values,
-                    "weights": weights
+                    "fraction": weights
                 })
-                df.weights *= 100
 
                 bars = alt.Chart(df).mark_bar().encode(
                     x='values:N',
-                    y="weights:Q"
+                    y="fraction:Q"
                 ).properties(width=width, height=height, autosize="fit")
                 chart = bars.to_json()
 
@@ -1410,6 +1450,11 @@ class ExpectationStringRenderer(ContentBlockRenderer):
                     "classes": ["col-" + str(col_width)],
                     "styles": {
                         "margin-top": "20px",
+                    },
+                    "parent": {
+                        "styles": {
+                            "list-style-type": "none"
+                        }
                     }
                 }
             }

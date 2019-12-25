@@ -429,37 +429,60 @@ class ProfilingResultsColumnSectionRenderer(ColumnSectionRenderer):
         if not kl_divergence_evr or "result" not in kl_divergence_evr or "details" not in kl_divergence_evr.get("result", {}):
             return
 
-        bins = kl_divergence_evr["result"]["details"]["observed_partition"]["bins"]
-        # bin_medians = [round((v+bins[i+1])/2, 1)
-        #                for i, v in enumerate(bins[:-1])]
-        # bin_medians = [(round(bins[i], 1), round(bins[i+1], 1)) for i, v in enumerate(bins[:-1])]
-        bins_x1 = [round(value, 1) for value in bins[:-1]]
-        bins_x2 = [round(value, 1) for value in bins[1:]]
         weights = kl_divergence_evr["result"]["details"]["observed_partition"]["weights"]
 
-        df = pd.DataFrame({
-            "bin_min": bins_x1,
-            "bin_max": bins_x2,
-            "weights": weights,
-        })
-        df.weights *= 100
-
-        if len(weights) <= 10:
-            height = 200
-            width = 200
-            col_width = 4
+        if len(weights) > 60:
+            return None
         else:
-            height = 300
-            width = 300
-            col_width = 6
+            chart_pixel_width = (len(weights) / 60.0) * 1000
+            if chart_pixel_width < 200:
+                chart_pixel_width = 200
+            chart_container_col_width = round((len(weights) / 60.0) * 12)
+            if chart_container_col_width < 4:
+                chart_container_col_width = 4
+            elif chart_container_col_width > 8:
+                chart_container_col_width = 12
+            elif chart_container_col_width > 4:
+                chart_container_col_width = 8
 
-        bars = alt.Chart(df).mark_bar().encode(
-            x='bin_min:O',
-            x2='bin_max:O',
-            y="weights:Q"
-        ).properties(width=width, height=height, autosize="fit")
+        mark_bar_args = {}
+        if len(weights) == 1:
+            mark_bar_args["size"] = 20
 
-        chart = bars.to_json()
+        if kl_divergence_evr["result"]["details"]["observed_partition"].get("bins"):
+            bins = kl_divergence_evr["result"]["details"]["observed_partition"]["bins"]
+            bins_x1 = [round(value, 1) for value in bins[:-1]]
+            bins_x2 = [round(value, 1) for value in bins[1:]]
+
+            df = pd.DataFrame({
+                "bin_min": bins_x1,
+                "bin_max": bins_x2,
+                "fraction": weights,
+            })
+            df.fraction *= 100
+
+            bars = alt.Chart(df).mark_bar(**mark_bar_args).encode(
+                x='bin_min:O',
+                x2='bin_max:O',
+                y="fraction:Q",
+                tooltip=["bin_min", "bin_max", "fraction"]
+            ).properties(width=chart_pixel_width, height=400, autosize="fit")
+            chart = bars.to_json()
+        elif kl_divergence_evr["result"]["details"]["observed_partition"].get("values"):
+            values = kl_divergence_evr["result"]["details"]["observed_partition"]["values"]
+
+            df = pd.DataFrame({
+                "values": values,
+                "fraction": weights
+            })
+            df.fraction *= 100
+
+            bars = alt.Chart(df).mark_bar(**mark_bar_args).encode(
+                x='values:N',
+                y="fraction:Q",
+                tooltip=["values", "fraction"]
+            ).properties(width=chart_pixel_width, height=400, autosize="fit")
+            chart = bars.to_json()
 
         return RenderedComponentContent(**{
             "content_block_type": "graph",
@@ -472,7 +495,7 @@ class ProfilingResultsColumnSectionRenderer(ColumnSectionRenderer):
                 },
             "graph": chart,
             "styling": {
-                "classes": ["col-" + str(col_width)],
+                "classes": ["col-" + str(chart_container_col_width)],
                 "styles": {
                     "margin-top": "20px",
                 }
@@ -500,19 +523,29 @@ class ProfilingResultsColumnSectionRenderer(ColumnSectionRenderer):
             "count": counts,
         })
 
-        if len(values) <= 10:
-            height = 200
-            width = 200
-            col_width = 4
+        if len(values) > 60:
+            return None
         else:
-            height = 300
-            width = 300
-            col_width = 6
+            chart_pixel_width = (len(values) / 60.0) * 1000
+            if chart_pixel_width < 200:
+                chart_pixel_width = 200
+            chart_container_col_width = round((len(values) / 60.0) * 12)
+            if chart_container_col_width < 4:
+                chart_container_col_width = 4
+            elif chart_container_col_width > 8:
+                chart_container_col_width = 12
+            elif chart_container_col_width > 4:
+                chart_container_col_width = 8
 
-        bars = alt.Chart(df).mark_bar(size=20).encode(
+        mark_bar_args = {}
+        if len(values) == 1:
+            mark_bar_args["size"] = 20
+
+        bars = alt.Chart(df).mark_bar(**mark_bar_args).encode(
             y='count:Q',
-            x="value:O"
-        ).properties(height=height, width=width, autosize="fit")
+            x="value:O",
+            tooltip=["value", "count"]
+        ).properties(height=400, width=chart_pixel_width, autosize="fit")
 
         chart = bars.to_json()
 
@@ -527,7 +560,7 @@ class ProfilingResultsColumnSectionRenderer(ColumnSectionRenderer):
                 },
             "graph": chart,
             "styling": {
-                "classes": ["col-" + str(col_width)],
+                "classes": ["col-" + str(chart_container_col_width)],
                 "styles": {
                     "margin-top": "20px",
                 }

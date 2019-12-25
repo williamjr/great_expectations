@@ -39,6 +39,11 @@ try:
 except ImportError:
     snowflake = None
 
+try:
+    import pybigquery.sqlalchemy_bigquery
+except ImportError:
+    pybigquery = None
+
 
 class MetaSqlAlchemyDataset(Dataset):
 
@@ -200,6 +205,9 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
         if custom_sql and not table_name:
             # dashes are special characters in most databases so use underscores
             table_name = "ge_tmp_" + str(uuid.uuid4()).replace("-", "_")
+            generated_table_name = table_name
+        else:
+            generated_table_name = None
 
         if table_name is None:
             raise ValueError("No table_name provided.")
@@ -226,6 +234,8 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
             self.dialect = import_module("snowflake.sqlalchemy.snowdialect")
         elif self.engine.dialect.name.lower() == "redshift":
             self.dialect = import_module("sqlalchemy_redshift.dialect")
+        elif self.engine.dialect.name.lower() == "bigquery":
+            self.dialect = import_module("pybigquery.sqlalchemy_bigquery")
         else:
             self.dialect = None
 
@@ -234,8 +244,16 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
             # a user-defined schema
             raise ValueError("Cannot specify both schema and custom_sql.")
 
+        if custom_sql is not None and self.engine.dialect.name.lower() == "bigquery":
+            if generated_table_name is not None and self.engine.dialect.dataset_id is None:
+                raise ValueError("No BigQuery dataset specified. Use biquery_temp_table batch_kwarg or a specify a default dataset in engine url")
+
         if custom_sql:
             self.create_temporary_table(table_name, custom_sql)
+
+            if generated_table_name is not None and self.engine.dialect.name.lower() == "bigquery":
+                logger.warning("Created permanent table {table_name}".format(
+                    table_name=table_name))
 
         try:
             insp = reflection.Inspector.from_engine(self.engine)
@@ -258,14 +276,17 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
                 con=self.engine,
                 chunksize=n
             ))
-        except ValueError:
+        except (ValueError, NotImplementedError):
             # it looks like MetaData that is used by pd.read_sql_table
             # cannot work on a temp table.
             # If it fails, we are trying to get the data using read_sql
             head_sql_str = "select * from "
-            if self._table.schema:
+            if self._table.schema and self.engine.dialect.name.lower() != "bigquery":
                 head_sql_str += self._table.schema + "."
-            head_sql_str += self._table.name
+            elif self.engine.dialect.name.lower() == "bigquery":
+                head_sql_str += "`" + self._table.name + "`"
+            else:
+                head_sql_str += self._table.name
             head_sql_str += " limit {0:d}".format(n)
 
             df = pd.read_sql(head_sql_str, con=self.engine)
@@ -329,7 +350,7 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
             sa.select([sa.func.min(sa.column(column))]).select_from(
                 self._table)
         ).scalar()
-    
+
     def get_column_value_counts(self, column, sort="value", collate=None):
         if sort not in ["value", "count", "none"]:
             raise ValueError(
@@ -398,12 +419,22 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
             column_median = column_values[1][0]  # True center value
         return column_median
 
-    def get_column_quantiles(self, column, quantiles):
-        selects = []
-        for quantile in quantiles:
-            selects.append(
-                sa.func.percentile_disc(quantile).within_group(sa.column(column).asc())
-            )
+    def get_column_quantiles(self, column, quantiles, allow_relative_error=False):
+        selects = [sa.func.percentile_disc(quantile).within_group(
+            sa.column(column).asc()) for quantile in quantiles]
+        try:
+            if isinstance(self.engine.dialect, sqlalchemy_redshift.dialect.RedshiftDialect):
+                # Redshift does not have a percentile_disc method, but does support an approximate version
+                if allow_relative_error is True:
+                    selects = [sa.text(
+                        ", ".join(["approximate " + str(stmt.compile(dialect=self.engine.dialect, compile_kwargs={
+                            'literal_binds': True})) for stmt in selects])
+                    )]
+                else:
+                    raise ValueError("Redshift does not support computing quantiles without approximation error; "
+                                     "set allow_relative_error to True to allow approximate quantiles.")
+        except (AttributeError, TypeError):
+            pass
         quantiles = self.engine.execute(sa.select(selects).select_from(self._table)).fetchone()
         return list(quantiles)
 
@@ -461,7 +492,7 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
                     )
                 ).label("bin_" + str(len(bins)-1))
             )
-        else:    
+        else:
             case_conditions.append(
                 sa.func.sum(
                     sa.case(
@@ -504,7 +535,7 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
                 max_condition = sa.column(column) < max_val
             else:
                 max_condition = sa.column(column) <= max_val
-        
+
         if min_condition is not None and max_condition is not None:
             condition = sa.and_(min_condition, max_condition)
         elif min_condition is not None:
@@ -522,7 +553,7 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
                     )
                 ) \
                 .select_from(self._table)
-        
+
         return self.engine.execute(query).scalar()
 
     def create_temporary_table(self, table_name, custom_sql):
@@ -532,18 +563,22 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
         It hasn't been tested in all SQL dialects, and may change based on community feedback.
         :param custom_sql:
         """
-        if self.engine.dialect.name == "mysql":
+
+        if self.engine.dialect.name.lower() == "bigquery":
+            stmt = "CREATE OR REPLACE TABLE `{table_name}` AS {custom_sql}".format(
+                table_name=table_name, custom_sql=custom_sql)
+
+        elif self.engine.dialect.name == "mysql":
             stmt = "CREATE TEMPORARY TABLE {table_name} AS {custom_sql}".format(
                 table_name=table_name, custom_sql=custom_sql)
         else:
             stmt = "CREATE TEMPORARY TABLE \"{table_name}\" AS {custom_sql}".format(
                 table_name=table_name, custom_sql=custom_sql)
-
         self.engine.execute(stmt)
 
     def column_reflection_fallback(self):
         """If we can't reflect the table, use a query to at least get column names."""
-        sql = sa.select([sa.text("*")]).select_from(self._table)
+        sql = sa.select([sa.text("*")]).select_from(self._table).limit(1)
         col_names = self.engine.execute(sql).keys()
         col_dict = [{'name': col_name} for col_name in col_names]
         return col_dict
@@ -577,6 +612,19 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
                                             ):
 
         return sa.column(column) != None
+
+    def _get_dialect_type_module(self):
+        if self.dialect is None:
+            logger.warning("No sqlalchemy dialect found; relying in top-level sqlalchemy types.")
+            return sa
+        try:
+            # Redshift does not (yet) export types to top level; only recognize base SA types
+            if isinstance(self.engine.dialect, sqlalchemy_redshift.dialect.RedshiftDialect):
+                return self.dialect.sa
+        except (TypeError, AttributeError):
+            pass
+
+        return self.dialect
 
     @DocInherit
     @DataAsset.expectation(['column', 'type_', 'mostly'])
@@ -612,11 +660,8 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
                 # vacuously true
                 success = True
             else:
-                if self.dialect is None:
-                    logger.warning("No sqlalchemy dialect found; relying in top-level sqlalchemy types.")
-                    success = issubclass(col_type, getattr(sa, type_))
-                else:
-                    success = issubclass(col_type, getattr(self.dialect, type_))
+                type_module = self._get_dialect_type_module()
+                success = issubclass(col_type, getattr(type_module, type_))
 
             return {
                     "success": success,
@@ -660,30 +705,18 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
         if type_list is None:
             success = True
         else:
-            if self.dialect is None:
-                logger.warning("No sqlalchemy dialect found; relying in top-level sqlalchemy types.")
-                types = []
-                for type_ in type_list:
-                    try:
-                        type_class = getattr(sa, type_)
-                        types.append(type_class)
-                    except AttributeError:
-                        logger.debug("Unrecognized type: %s" % type_)
-                if len(types) == 0:
-                    logger.warning("No recognized sqlalchemy types in type_list")
-                types = tuple(types)
-            else:
-                types = []
-                for type_ in type_list:
-                    try:
-                        type_class = getattr(self.dialect, type_)
-                        types.append(type_class)
-                    except AttributeError:
-                        logger.debug("Unrecognized type: %s" % type_)
-                if len(types) == 0:
-                    logger.warning("No recognized sqlalchemy types in type_list for dialect %s" %
-                                   self.dialect.__name__)
-                types = tuple(types)
+            types = []
+            type_module = self._get_dialect_type_module()
+            for type_ in type_list:
+                try:
+                    type_class = getattr(type_module, type_)
+                    types.append(type_class)
+                except AttributeError:
+                    logger.debug("Unrecognized type: %s" % type_)
+            if len(types) == 0:
+                logger.warning("No recognized sqlalchemy types in type_list for dialect %s" %
+                               type_module.__name__)
+            types = tuple(types)
             success = issubclass(col_type, types)
 
         return {
@@ -868,6 +901,13 @@ class SqlAlchemyDataset(MetaSqlAlchemyDataset):
             # Snowflake
             if isinstance(self.engine.dialect, snowflake.sqlalchemy.snowdialect.SnowflakeDialect):
                 return "RLIKE" if positive else "NOT RLIKE"
+        except (AttributeError, TypeError):  # TypeError can occur if the driver was not installed and so is None
+            pass
+
+        try:
+            # Bigquery
+            if isinstance(self.engine.dialect, pybigquery.sqlalchemy_bigquery.BigQueryDialect):
+                return "REGEXP_CONTAINS" if positive else "NOT REGEXP_CONTAINS"
         except (AttributeError, TypeError):  # TypeError can occur if the driver was not installed and so is None
             pass
 
