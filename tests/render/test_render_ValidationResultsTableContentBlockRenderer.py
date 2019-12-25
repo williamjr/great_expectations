@@ -1,4 +1,6 @@
+# -*- coding: utf-8 -*-
 
+from __future__ import unicode_literals
 import json
 
 from great_expectations.render.renderer.content_block import (
@@ -127,44 +129,51 @@ def test_ValidationResultsTableContentBlockRenderer_get_content_block_fn(evr_suc
     content_block_fn = ValidationResultsTableContentBlockRenderer._get_content_block_fn("expect_table_row_count_to_be_between")
     content_block_fn_output = content_block_fn(evr_success)
     print(json.dumps(content_block_fn_output, indent=2))
-    
+
     content_block_fn_expected_output = [
-      [
-        {
-          "content_block_type": "string_template",
-          "string_template": {
-            "template": "$icon",
-            "params": {
-              "icon": ""
-            },
-            "styling": {
-              "params": {
-                "icon": {
-                  "classes": [
-                    "fas",
-                    "fa-check-circle",
-                    "text-success"
-                  ],
-                  "tag": "i"
+        [
+            {
+                "content_block_type": "string_template",
+                "string_template": {
+                    "template": "$icon",
+                    "params": {
+                        "icon": ""
+                    },
+                    "styling": {
+                        "params": {
+                            "icon": {
+                                "classes": [
+                                    "fas",
+                                    "fa-check-circle",
+                                    "text-success"
+                                ],
+                                "tag": "i"
+                            }
+                        }
+                    }
+                },
+                "styling": {
+                    "parent": {
+                        "classes": [
+                            "hide-succeeded-validation-target-child"
+                        ]
+                    }
                 }
-              }
-            }
-          }
-        },
-        {
-          "content_block_type": "string_template",
-          "string_template": {
-            "template": "Must have more than $min_value rows.",
-            "params": {
-              "min_value": 0,
-              "max_value": None,
-              "result_format": "SUMMARY"
             },
-            "styling": None
-          }
-        },
-        "1313"
-      ]
+            {
+                "content_block_type": "string_template",
+                "string_template": {
+                    "template": "Must have more than $min_value rows.",
+                    "params": {
+                        "min_value": 0,
+                        "max_value": None,
+                        "result_format": "SUMMARY"
+                    },
+                    "styling": None
+                }
+            },
+            "1,313"
+        ]
     ]
     assert content_block_fn_output == content_block_fn_expected_output
     
@@ -236,7 +245,7 @@ def test_ValidationResultsTableContentBlockRenderer_get_observed_value(evr_succe
     # test _get_observed_value when evr["result"]["observed_value"] exists
     output_1 = ValidationResultsTableContentBlockRenderer._get_observed_value(evr_success)
     print(output_1)
-    assert output_1 == "1313"
+    assert output_1 == "1,313"
     # test _get_observed_value when evr["result"] does not exist
     output_2 = ValidationResultsTableContentBlockRenderer._get_observed_value(evr_no_result_key)
     print(output_2)
@@ -244,7 +253,7 @@ def test_ValidationResultsTableContentBlockRenderer_get_observed_value(evr_succe
     # test _get_observed_value for expect_column_values_to_not_be_null expectation type
     output_3 = ValidationResultsTableContentBlockRenderer._get_observed_value(evr_expect_column_values_to_not_be_null)
     print(output_3)
-    assert output_3 == "20.03046458% not null"
+    assert output_3 == "≈20.03% not null"
     # test _get_observed_value for expect_column_values_to_be_null expectation type
     output_4 = ValidationResultsTableContentBlockRenderer._get_observed_value(evr_expect_column_values_to_be_null)
     print(output_4)
@@ -318,20 +327,18 @@ def test_ValidationResultsTableContentBlockRenderer_get_unexpected_statement(evr
     
     # test for succeeded evr
     output_1 = ValidationResultsTableContentBlockRenderer._get_unexpected_statement(evr_success)
-    print(output_1)
     assert output_1 is None
     
     # test for failed evr
     output_2 = ValidationResultsTableContentBlockRenderer._get_unexpected_statement(evr_failed)
-    print(json.dumps(output_2, indent=2))
     assert output_2 == {
       "content_block_type": "string_template",
       "string_template": {
         "template": "\n\n$unexpected_count unexpected values found. $unexpected_percent of $element_count total rows.",
         "params": {
-          "unexpected_count": 3,
-          "unexpected_percent": "0.23%",
-          "element_count": 1313
+          "unexpected_count": '3',
+          "unexpected_percent": "≈0.2285%",
+          "element_count": '1,313'
         },
         "tag": "strong",
         "styling": {
@@ -862,25 +869,32 @@ def test_ValidationResultsTableContentBlockRenderer_get_status_cell(evr_failed_w
     output_2 = ValidationResultsTableContentBlockRenderer._get_status_icon(evr_success)
     print(json.dumps(output_2, indent=2))
     assert output_2 == {
-      "content_block_type": "string_template",
-      "string_template": {
-        "template": "$icon",
-        "params": {
-          "icon": ""
+        "content_block_type": "string_template",
+        "string_template": {
+            "template": "$icon",
+            "params": {
+                "icon": ""
+            },
+            "styling": {
+                "params": {
+                    "icon": {
+                        "classes": [
+                            "fas",
+                            "fa-check-circle",
+                            "text-success"
+                        ],
+                        "tag": "i"
+                    }
+                }
+            }
         },
         "styling": {
-          "params": {
-            "icon": {
-              "classes": [
-                "fas",
-                "fa-check-circle",
-                "text-success"
-              ],
-              "tag": "i"
+            "parent": {
+                "classes": [
+                    "hide-succeeded-validation-target-child"
+                ]
             }
-          }
         }
-      }
     }
     
     # test for failed evr

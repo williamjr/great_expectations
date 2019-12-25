@@ -13,7 +13,9 @@ from great_expectations.render.types import (
     RenderedComponentContent,
     RenderedSectionContent,
     RenderedComponentContentWrapper,
+    RenderedDocumentContent
 )
+from ..test_utils import dict_to_ordered_dict
 
 @pytest.fixture()
 def validation_results():
@@ -29,6 +31,7 @@ def expectations():
 
 # noinspection PyPep8Naming
 @pytest.mark.smoketest
+@pytest.mark.rendered_output
 def test_render_DefaultJinjaPageView_meta_info():
     validation_results = {
         "results": [],
@@ -49,12 +52,11 @@ def test_render_DefaultJinjaPageView_meta_info():
             }
         }
     }
-    document = ProfilingResultsPageRenderer().render(validation_results)
-    html = DefaultJinjaPageView.render(document)
-    print(html)
-    # TODO: Use above print to set up snapshot test once we like the result
 
-    assert '<a class="navbar-brand" href="#" style="white-space: normal; word-break: break-all;overflow-wrap: normal; font-size: 1rem; font-weight: 500;">tetanusvaricella</a>' in html
+    document = RenderedDocumentContent(dict_to_ordered_dict(ProfilingResultsPageRenderer().render(validation_results)))
+    html = DefaultJinjaPageView().render(document)
+    with open('./tests/render/output/test_render_DefaultJinjaPageView_meta_info.html', 'w') as outfile:
+        outfile.write(html)
 
 
 def test_render_section_page():
@@ -91,7 +93,7 @@ def test_render_section_page():
         ]
     })
 
-    rendered_doc = ge.render.view.view.DefaultJinjaSectionView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaSectionView().render(
         RenderedComponentContentWrapper(**{
             "section": section,
             "section_loop": {"index": 1},
@@ -107,10 +109,10 @@ def test_render_section_page():
 
 <div id="content-block-1" >
 
-    <div id="content-block-1-header" >
-    <h3>
-        Overview
-    </h3></div>
+    <div id="content-block-1-header" ><h3>
+          Overview
+      </h3>
+    </div>
 
 </div>
 
@@ -118,17 +120,19 @@ def test_render_section_page():
 <div id="content-block-2" class="col-6 table-responsive" style="margin-top:20px;" >
 
     <div id="content-block-2-header" >
+        
         <h4>
             Dataset info
-        </h4></div>
+        </h4>
+        </div>
 
 
 <table id="content-block-2-body" class="table table-sm" >
     
 
     <tr>
-        <td id="content-block-2-cell-1-1" ><span>Number of variables</span></td><td id="content-block-2-cell-1-2" ><span>12</span></td></tr><tr>
-        <td id="content-block-2-cell-2-1" ><span>Number of observations</span></td><td id="content-block-2-cell-2-2" ><span>891</span></td></tr></table>
+        <td id="content-block-2-cell-1-1" ><div class="show-scrollbars"><span>Number of variables</span></div></td><td id="content-block-2-cell-1-2" ><div class="show-scrollbars"><span>12</span></div></td></tr><tr>
+        <td id="content-block-2-cell-2-1" ><div class="show-scrollbars"><span>Number of observations</span></div></td><td id="content-block-2-cell-2-2" ><div class="show-scrollbars"><span>891</span></div></td></tr></table>
 
 </div>
         
@@ -142,7 +146,7 @@ def test_rendering_components_without_section_loop_index():
         "content_block_type": "header",
         "header": "Overview",
     })
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": header_component_content,
             "content_block_loop": {"index": 2},
@@ -161,7 +165,7 @@ def test_rendering_components_without_section_loop_index():
 
 </div>""".replace(" ", "").replace("\t", "").replace("\n", "")
 
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": header_component_content,
         })
@@ -177,7 +181,7 @@ def test_rendering_components_without_section_loop_index():
         </h3></div>
 </div>""".replace(" ", "").replace("\t", "").replace("\n", "")
 
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": header_component_content,
             "section_loop": {"index": 3},
@@ -262,7 +266,7 @@ def test_rendering_components_with_styling():
             }
         }
     })
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": header_component_content,
             "section_loop": {"index": 1},
@@ -277,13 +281,15 @@ def test_rendering_components_with_styling():
 <div id="section-1-content-block-2" class="root_foo" root="baz" style="root:bar;" >
 
     <div id="section-1-content-block-2-header" class="header_foo" header="baz" style="header:bar;" >
+        
         <h4>
             
                 <span >
                     <span class="y" >AAA</span> <span class="x" >BBB</span> <span class="x" >CCC</span>
                 </span>
             
-        </h4><h5 id="section-1-content-block-2-subheader" class="subheader_foo" subheader="baz" style="subheader:bar;" >
+        </h4>
+        <h5 id="section-1-content-block-2-subheader" class="subheader_foo" subheader="baz" style="subheader:bar;" >
             
                 <span >
                     <span class="yy" >aaa</span> <span class="xx" >bbb</span> <span class="xx" >ccc</span>
@@ -297,8 +303,8 @@ def test_rendering_components_with_styling():
     
 
     <tr>
-        <td id="section-1-content-block-2-cell-1-1" ><span>Mean</span></td><td id="section-1-content-block-2-cell-1-2" ><span>446</span></td></tr><tr>
-        <td id="section-1-content-block-2-cell-2-1" ><span>Minimum</span></td><td id="section-1-content-block-2-cell-2-2" ><span>1</span></td></tr></table>
+        <td id="section-1-content-block-2-cell-1-1" ><div class="show-scrollbars"><span>Mean</span></div></td><td id="section-1-content-block-2-cell-1-2" ><div class="show-scrollbars"><span>446</span></div></td></tr><tr>
+        <td id="section-1-content-block-2-cell-2-1" ><div class="show-scrollbars"><span>Minimum</span></div></td><td id="section-1-content-block-2-cell-2-2" ><div class="show-scrollbars"><span>1</span></div></td></tr></table>
 
 </div>""".replace(" ", "").replace("\t", "").replace("\n", "")
 
@@ -312,7 +318,7 @@ def test_render_header_component():
         "content_block_type": "header",
         "header": "Overview",
     })
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": header_component_content,
             "section_loop": {"index": 1},
@@ -346,7 +352,7 @@ def test_render_table_component():
             "classes": ["col-4"],
         }
     })
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": table_component_content,
             "section_loop": {"index": 1},
@@ -360,17 +366,19 @@ def test_render_table_component():
 <div id="section-1-content-block-2" class="col-4" >
 
     <div id="section-1-content-block-2-header" >
+        
         <h4>
             Overview
-        </h4></div>
+        </h4>
+        </div>
 
 
 <table id="section-1-content-block-2-body" >
     
 
     <tr>
-        <td id="section-1-content-block-2-cell-1-1" ><span>Mean</span></td><td id="section-1-content-block-2-cell-1-2" ><span>446</span></td></tr><tr>
-        <td id="section-1-content-block-2-cell-2-1" ><span>Minimum</span></td><td id="section-1-content-block-2-cell-2-2" ><span>1</span></td></tr></table>
+        <td id="section-1-content-block-2-cell-1-1" ><div class="show-scrollbars"><span>Mean</span></div></td><td id="section-1-content-block-2-cell-1-2" ><div class="show-scrollbars"><span>446</span></div></td></tr><tr>
+        <td id="section-1-content-block-2-cell-2-1" ><div class="show-scrollbars"><span>Minimum</span></div></td><td id="section-1-content-block-2-cell-2-2" ><div class="show-scrollbars"><span>1</span></div></td></tr></table>
 
 </div>""".replace(" ", "").replace("\t", "").replace("\n", "")
 
@@ -400,7 +408,7 @@ def test_render_value_list():
         }
     })
 
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": value_list_component_content,
             "section_loop": {"index": 1},
@@ -444,7 +452,7 @@ def test_render_graph():
         }
     })
 
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": graph_component_content,
             "section_loop": {"index": 1},
@@ -462,7 +470,9 @@ def test_render_graph():
             Histogram
         </h4>
         </div>
-<div id="section-1-content-block-2-graph" ></div>
+<div class="show-scrollbars">
+  <div id="section-1-content-block-2-graph" ></div>
+</div>
 <script>
     // Assign the specification to a local variable vlSpec.
     vlSpec = {"$schema": "https://vega.github.io/schema/vega-lite/v2.6.0.json", "autosize": "fit", "config": {"view": {"height": 300, "width": 400}}, "data": {"name": "data-a681d02fb484e64eadd9721b37015d5b"}, "datasets": {"data-a681d02fb484e64eadd9721b37015d5b": [{"bins": 3.7, "weights": 5.555555555555555}, {"bins": 10.8, "weights": 3.439153439153439}, {"bins": 17.9, "weights": 17.857142857142858}, {"bins": 25.0, "weights": 24.206349206349206}, {"bins": 32.0, "weights": 16.137566137566136}, {"bins": 39.1, "weights": 12.3015873015873}, {"bins": 46.2, "weights": 9.788359788359788}, {"bins": 53.3, "weights": 5.423280423280423}, {"bins": 60.4, "weights": 3.439153439153439}, {"bins": 67.5, "weights": 1.8518518518518516}]}, "encoding": {"x": {"field": "bins", "type": "ordinal"}, "y": {"field": "weights", "type": "quantitative"}}, "height": 200, "mark": "bar", "width": 200};
@@ -472,7 +482,8 @@ def test_render_graph():
     }).then(result=>console.log(result)).catch(console.warn);
 </script>
 
-</div>""".replace(" ", "").replace("\t", "").replace("\n", "")
+</div>
+""".replace(" ", "").replace("\t", "").replace("\n", "")
 
 
 def test_render_text():
@@ -485,7 +496,7 @@ def test_render_text():
         }
     })
 
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": text_component_content,
             "section_loop": {"index": 1},
@@ -518,7 +529,7 @@ def test_render_text():
         }
     })
 
-    rendered_doc = ge.render.view.view.DefaultJinjaComponentView.render(
+    rendered_doc = ge.render.view.view.DefaultJinjaComponentView().render(
         RenderedComponentContentWrapper(**{
             "content_block": text_component_content,
             "section_loop": {"index": 1},

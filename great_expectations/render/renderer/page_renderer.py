@@ -1,8 +1,10 @@
 import logging
+from six import string_types
 
 import pypandoc
 
 from great_expectations.data_context.util import instantiate_class_from_config
+from great_expectations.render.util import num_to_str
 
 from .renderer import Renderer
 from ..types import (
@@ -54,8 +56,26 @@ class ValidationResultsPageRenderer(Renderer):
         overview_content_blocks = [
             self._render_validation_header(),
             self._render_validation_info(validation_results=validation_results),
-            self._render_validation_statistics(validation_results=validation_results)
+            self._render_validation_statistics(validation_results=validation_results),
         ]
+
+        if validation_results["meta"].get("batch_id"):
+            overview_content_blocks.insert(
+                2,
+                self._render_nested_table_from_dict(
+                    input_dict=validation_results["meta"].get("batch_id"),
+                    header="Batch ID"
+                )
+            )
+
+        if validation_results["meta"].get("batch_kwargs"):
+            overview_content_blocks.insert(
+                3,
+                self._render_nested_table_from_dict(
+                    input_dict=validation_results["meta"].get("batch_kwargs"),
+                    header="Batch Kwargs"
+                )
+            )
     
         if "data_asset_name" in validation_results["meta"] and validation_results["meta"]["data_asset_name"]:
             data_asset_name = short_data_asset_name
@@ -83,7 +103,7 @@ class ValidationResultsPageRenderer(Renderer):
         ]
     
         return RenderedDocumentContent(**{
-            "renderer_type": "ValidationResultsColumnSectionRenderer",
+            "renderer_type": "ValidationResultsPageRenderer",
             "data_asset_name": data_asset_name,
             "full_data_asset_identifier": full_data_asset_identifier,
             "page_title": run_id + "-" + expectation_suite_name + "-ValidationResults",
@@ -111,7 +131,11 @@ class ValidationResultsPageRenderer(Renderer):
         expectation_suite_name = validation_results['meta']['expectation_suite_name']
         ge_version = validation_results["meta"]["great_expectations.__version__"]
         success = validation_results["success"]
-        
+        if success:
+            success = '<i class="fas fa-check-circle text-success" aria-hidden="true"></i> Succeeded'
+        else:
+            success = '<i class="fas fa-times text-danger" aria-hidden="true"></i> Failed'
+
         return RenderedComponentContent(**{
             "content_block_type": "table",
             "header": "Info",
@@ -120,7 +144,7 @@ class ValidationResultsPageRenderer(Renderer):
                 ["Expectation Suite Name", expectation_suite_name],
                 ["Great Expectations Version", ge_version],
                 ["Run ID", run_id],
-                ["Validation Succeeded", success]
+                ["Validation Status", success]
             ],
             "styling": {
                 "classes": ["col-12", "table-responsive"],
@@ -134,6 +158,115 @@ class ValidationResultsPageRenderer(Renderer):
         })
     
     @classmethod
+    def _render_nested_table_from_dict(cls, input_dict, header=None, sub_table=False):
+        table_rows = []
+        
+        for kwarg, value in input_dict.items():
+            if not isinstance(value, (dict, OrderedDict)):
+                table_row = [
+                    {
+                        "content_block_type": "string_template",
+                        "string_template": {
+                            "template": "$value",
+                            "params": {
+                                "value": str(kwarg)
+                            },
+                            "styling": {
+                                "default": {
+                                    "styles": {
+                                        "word-break": "break-all"
+                                    }
+                                },
+                            }
+                        },
+                        "styling": {
+                            "parent": {
+                                "classes": ["pr-3"],
+                            }
+                        }
+                    },
+                    {
+                        "content_block_type": "string_template",
+                        "string_template": {
+                            "template": "$value",
+                            "params": {
+                                "value": str(value)
+                            },
+                            "styling": {
+                                "default": {
+                                    "styles": {
+                                        "word-break": "break-all"
+                                    }
+                                },
+                            }
+                        },
+                        "styling": {
+                            "parent": {
+                                "classes": [],
+                            }
+                        }
+                    }
+                ]
+            else:
+                table_row = [
+                    {
+                        "content_block_type": "string_template",
+                        "string_template": {
+                            "template": "$value",
+                            "params": {
+                                "value": str(kwarg)
+                            },
+                            "styling": {
+                                "default": {
+                                    "styles": {
+                                        "word-break": "break-all"
+                                    }
+                                },
+                            }
+                        },
+                        "styling": {
+                            "parent": {
+                                "classes": ["pr-3"],
+                            }
+                        }
+                    },
+                    cls._render_nested_table_from_dict(value, sub_table=True)
+                ]
+            table_rows.append(table_row)
+            
+        table_rows.sort(key=lambda row: row[0]["string_template"]["params"]["value"])
+        
+        if sub_table:
+            return RenderedComponentContent(**{
+                "content_block_type": "table",
+                "table": table_rows,
+                "styling": {
+                    "classes": ["col-12", "table-responsive"],
+                    "body": {
+                        "classes": ["table", "table-sm", "m-0"]
+                    },
+                    "parent": {
+                        "classes": ["pt-0", "pl-0", "border-top-0"]
+                    }
+                },
+            })
+        else:
+            return RenderedComponentContent(**{
+                "content_block_type": "table",
+                "header": header,
+                "table": table_rows,
+                "styling": {
+                    "classes": ["col-12", "table-responsive"],
+                    "styles": {
+                        "margin-top": "20px"
+                    },
+                    "body": {
+                        "classes": ["table", "table-sm"]
+                    }
+                },
+            })
+
+    @classmethod
     def _render_validation_statistics(cls, validation_results):
         statistics = validation_results["statistics"]
         statistics_dict = OrderedDict([
@@ -146,7 +279,8 @@ class ValidationResultsPageRenderer(Renderer):
         for key, value in statistics_dict.items():
             if statistics.get(key) is not None:
                 if key == "success_percent":
-                    table_rows.append([value, "{0:.2f}%".format(statistics[key])])
+                    # table_rows.append([value, "{0:.2f}%".format(statistics[key])])
+                    table_rows.append([value, num_to_str(statistics[key], precision=4) + "%"])
                 else:
                     table_rows.append([value, statistics[key]])
         
@@ -212,6 +346,7 @@ class ExpectationSuitePageRenderer(Renderer):
         ]
         return RenderedDocumentContent(**{
             # "data_asset_name": short_data_asset_name,
+            "renderer_type": "ExpectationSuitePageRenderer",
             "full_data_asset_identifier": full_data_asset_identifier,
             "page_title": expectation_suite_name,
             "utm_medium": "expectation-suite-page",
@@ -299,18 +434,18 @@ class ExpectationSuitePageRenderer(Renderer):
             notes = expectations["meta"]["notes"]
             note_content = None
             
-            if type(notes) == str:
+            if isinstance(notes, string_types):
                 note_content = [notes]
             
-            elif type(notes) == list:
+            elif isinstance(notes, list):
                 note_content = notes
             
-            elif type(notes) == dict:
+            elif isinstance(notes, dict):
                 if "format" in notes:
                     if notes["format"] == "string":
-                        if type(notes["content"]) == str:
+                        if isinstance(notes["content"], string_types):
                             note_content = [notes["content"]]
-                        elif type(notes["content"]) == list:
+                        elif isinstance(notes["content"], list):
                             note_content = notes["content"]
                         else:
                             logger.warning("Unrecognized Expectation suite notes format. Skipping rendering.")
@@ -318,13 +453,13 @@ class ExpectationSuitePageRenderer(Renderer):
                     elif notes["format"] == "markdown":
                         # ???: Should converting to markdown be the renderer's job, or the view's job?
                         # Renderer is easier, but will end up mixing HTML strings with content_block info.
-                        if type(notes["content"]) == str:
+                        if isinstance(notes["content"], string_types):
                             try:
                                 note_content = [pypandoc.convert_text(notes["content"], format='md', to="html")]
                             except OSError:
                                 note_content = [notes["content"]]
                         
-                        elif type(notes["content"]) == list:
+                        elif isinstance(notes["content"], list):
                             try:
                                 note_content = [pypandoc.convert_text(note, format='md', to="html") for note in
                                             notes["content"]]

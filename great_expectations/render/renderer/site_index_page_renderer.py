@@ -6,6 +6,7 @@ from great_expectations.render.types import (
     RenderedSectionContent,
     RenderedDocumentContent
 )
+from .call_to_action_renderer import CallToActionRenderer
 
 # FIXME : This class needs to be rebuilt to accept SiteSectionIdentifiers as input.
 # FIXME : This class needs tests.
@@ -36,7 +37,7 @@ class SiteIndexPageRenderer(Renderer):
                 "styling": {
                     "params": {
                         "data_asset": {
-                            "classes": ["blockquote"],
+                            "classes": ["h6", "ge-index-page-generator-table-data-asset-name"],
                         }
                     }
                 }
@@ -72,7 +73,8 @@ class SiteIndexPageRenderer(Renderer):
                         "styling": {
                             "attributes": {
                                 "href": link_dict["filepath"]
-                            }
+                            },
+                            "classes": ["ge-index-page-generator-table-profiling-links-item"]
                         }
                     }
                 }) for link_dict in profiling_links
@@ -87,7 +89,10 @@ class SiteIndexPageRenderer(Renderer):
                         },
                         "attributes": {
                             "rowspan": rowspan
-                        }
+                        },
+                    },
+                    "body": {
+                        "classes": ["ge-index-page-generator-table-profiling-links-list"]
                     }
                 }
             })
@@ -116,6 +121,7 @@ class SiteIndexPageRenderer(Renderer):
                         "attributes": {
                             "href": expectation_suite_link_dict["filepath"]
                         },
+                        "classes": ["ge-index-page-generator-table-expectation-suite-link"]
                     }
                 },
                 "styling": {
@@ -153,7 +159,14 @@ class SiteIndexPageRenderer(Renderer):
                                         "classes": ["fas", "fa-check-circle", "text-success"] if link_dict[
                                             "validation_success"] else ["fas", "fa-times", "text-danger"]
                                     }
-                                }
+                                },
+                                "classes": ["ge-index-page-generator-table-validation-links-item"]
+                            }
+                        },
+                        "styling": {
+                            "parent": {
+                                "classes": ["hide-succeeded-validation-target"] if not link_dict[
+                                            "validation_success"] else []
                             }
                         }
                     }) for link_dict in sorted_validations_links if
@@ -169,10 +182,7 @@ class SiteIndexPageRenderer(Renderer):
                             }
                         },
                         "body": {
-                            "styles": {
-                                "max-height": "15em",
-                                # "overflow": "scroll"
-                            }
+                            "classes": ["ge-index-page-generator-table-validation-links-list"]
                         }
                     }
                 })
@@ -202,7 +212,14 @@ class SiteIndexPageRenderer(Renderer):
                                     "classes": ["fas", "fa-check-circle", "text-success"] if link_dict[
                                         "validation_success"] else ["fas", "fa-times", "text-danger"]
                                 }
-                            }
+                            },
+                            "classes": ["ge-index-page-generator-table-validation-links-item"]
+                        }
+                    },
+                    "styling": {
+                        "parent": {
+                            "classes": ["hide-succeeded-validation-target"] if not link_dict[
+                                "validation_success"] else []
                         }
                     }
                 }) for link_dict in sorted_validations_links
@@ -217,10 +234,7 @@ class SiteIndexPageRenderer(Renderer):
                         }
                     },
                     "body": {
-                        "styles": {
-                            "max-height": "15em",
-                            # "overflow": "scroll"
-                        }
+                        "classes": ["ge-index-page-generator-table-validation-links-list"]
                     }
                 }
             })
@@ -245,6 +259,7 @@ class SiteIndexPageRenderer(Renderer):
                             "attributes": {
                                 "href": expectation_suite_link_dict["filepath"]
                             },
+                            "classes": ["ge-index-page-generator-table-expectation-suite-link"]
                         }
                     },
                     "styling": {
@@ -281,7 +296,14 @@ class SiteIndexPageRenderer(Renderer):
                                             "tag": "i",
                                             "classes": ["fas", "fa-check-circle",  "text-success"] if link_dict["validation_success"] else ["fas", "fa-times", "text-danger"]
                                         }
-                                    }
+                                    },
+                                    "classes": ["ge-index-page-generator-table-validation-links-item"]
+                                }
+                            },
+                            "styling": {
+                                "parent": {
+                                    "classes": ["hide-succeeded-validation-target"] if link_dict[
+                                        "validation_success"] else []
                                 }
                             }
                         }) for link_dict in sorted_validations_links if
@@ -297,10 +319,7 @@ class SiteIndexPageRenderer(Renderer):
                                 }
                             },
                             "body": {
-                                "styles": {
-                                    "max-height": "15em",
-                                    # "overflow": "scroll"
-                                }
+                                "classes": ["ge-index-page-generator-table-validation-links-list"]
                             }
                         }
                     })
@@ -314,6 +333,7 @@ class SiteIndexPageRenderer(Renderer):
     def render(cls, index_links_dict):
 
         sections = []
+        cta_object = index_links_dict.pop("cta_object", None)
 
         for source, generators in index_links_dict.items():
             content_blocks = []
@@ -321,9 +341,22 @@ class SiteIndexPageRenderer(Renderer):
             # datasource header
             source_header_block = RenderedComponentContent(**{
                 "content_block_type": "header",
-                "header": source,
+                "header": {
+                    "template": "$title_prefix | $source",
+                    "params": {
+                        "source": source,
+                        "title_prefix": "Datasource"
+                    },
+                    "styling": {
+                        "params": {
+                            "title_prefix": {
+                                "tag": "strong"
+                            }
+                        }
+                    },
+                },
                 "styling": {
-                    "classes": ["col-12"],
+                    "classes": ["col-12", "ge-index-page-datasource-title"],
                     "header": {
                         "classes": ["alert", "alert-secondary"]
                     }
@@ -335,28 +368,37 @@ class SiteIndexPageRenderer(Renderer):
             for generator, data_assets in generators.items():
                 generator_header_block = RenderedComponentContent(**{
                     "content_block_type": "header",
-                    "header": generator,
+                    "subheader": {
+                        "template": "$title_prefix | $generator",
+                        "params": {
+                            "generator": generator,
+                            "title_prefix": "Data Asset Generator"
+                        },
+                        "styling": {
+                            "params": {
+                                "title_prefix": {
+                                    "tag": "strong"
+                                }
+                            }
+                        },
+                    },
                     "styling": {
-                        "classes": ["col-12", "ml-4"],
+                        "classes": ["col-12", "ml-4", "ge-index-page-generator-title"],
                     }
                 })
                 content_blocks.append(generator_header_block)
 
-                horizontal_rule = RenderedComponentContent(**{
+                generator_table_rows = []
+                generator_table_header_row = [RenderedComponentContent(**{
                     "content_block_type": "string_template",
                     "string_template": {
-                        "template": "",
+                        "template": "Data Asset",
                         "params": {},
-                        "tag": "hr"
-                    },
-                    "styling": {
-                        "classes": ["col-12"],
+                        "styling": {
+                            "classes": ["ge-index-page-generator-table-data-asset-header"],
+                        }
                     }
-                })
-                content_blocks.append(horizontal_rule)
-
-                generator_table_rows = []
-                generator_table_header_row = ["Data Asset"]
+                })]
                 link_list_keys_to_render = []
                 
                 header_dict = OrderedDict([
@@ -370,6 +412,18 @@ class SiteIndexPageRenderer(Renderer):
                         if header in generator_table_header_row:
                             continue
                         if link_lists.get(link_lists_key):
+                            class_header_str = link_lists_key.replace("_", "-")
+                            class_str = "ge-index-page-generator-table-{}-header".format(class_header_str)
+                            header = RenderedComponentContent(**{
+                                "content_block_type": "string_template",
+                                "string_template": {
+                                    "template": header,
+                                    "params": {},
+                                    "styling": {
+                                        "classes": [class_str],
+                                    }
+                                }
+                            })
                             generator_table_header_row.append(header)
                             link_list_keys_to_render.append(link_lists_key)
                 
@@ -378,12 +432,12 @@ class SiteIndexPageRenderer(Renderer):
                     "header_row": generator_table_header_row,
                     "table": generator_table_rows,
                     "styling": {
-                        "classes": ["col-12"],
+                        "classes": ["col-12", "ge-index-page-generator-table-container", "pl-5", "pr-4"],
                         "styles": {
                             "margin-top": "10px"
                         },
                         "body": {
-                            "classes": ["table", "table-sm"]
+                            "classes": ["table", "table-sm", "ge-index-page-generator-table"]
                         }
                     }
                 })
@@ -399,7 +453,13 @@ class SiteIndexPageRenderer(Renderer):
             })
             sections.append(section)
 
-        return RenderedDocumentContent(**{
-                "utm_medium": "index-page",
-                "sections": sections
+        index_page_document = RenderedDocumentContent(**{
+            "renderer_type": "SiteIndexPageRenderer",
+            "utm_medium": "index-page",
+            "sections": sections
             })
+        
+        if cta_object:
+            index_page_document["cta_footer"] = CallToActionRenderer.render(cta_object)
+            
+        return index_page_document

@@ -403,8 +403,9 @@ structure below.
     ├── expectations
     ├── great_expectations.yml
     ├── notebooks
-    │   ├── create_expectations.ipynb
-    │   └── integrate_validation_into_pipeline.ipynb
+    │   ├── pandas
+    │   ├── spark
+    │   └── sql
     ├── plugins
     │   └── custom_module
     │       └── custom_dataset.py
@@ -421,7 +422,10 @@ structure below.
 
     >> import great_expectations as ge
     >> context = ge.DataContext()
-    >> my_df = context.get_batch("my_datasource/default/my_file")
+    >> my_df = context.get_batch(
+        "my_datasource/default/my_file",
+        "warning",
+        context.yield_batch_kwargs("my_datasource/default/my_file"))
 
     >> my_df.expect_column_values_to_equal_1("all_twos")
     {

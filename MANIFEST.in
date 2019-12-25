@@ -1,7 +1,8 @@
 include *.txt
 include LICENSE
-include great_expectations/init_notebooks/*.ipynb
+include great_expectations/init_notebooks/*/*.ipynb
 include great_expectations/render/view/templates/*.j2
+include great_expectations/render/view/styles/*.css
 graft tests
 global-exclude *.py[co]
 include versioneer.py

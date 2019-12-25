@@ -1,3 +1,6 @@
+# -*- coding: utf-8 -*-
+
+from __future__ import unicode_literals
 import json
 import pypandoc
 
@@ -13,24 +16,24 @@ def test_ExpectationSuitePageRenderer_render_asset_notes():
     # print(pypandoc.convert_text("*hi*", to='html', format="md"))
 
     result = ExpectationSuitePageRenderer._render_asset_notes({
-        "meta" : {
-            "notes" : "*hi*"
+        "meta": {
+            "notes": "*hi*"
         }
     })
     print(result)
     assert result["content"] == ["*hi*"]
 
     result = ExpectationSuitePageRenderer._render_asset_notes({
-        "meta" : {
-            "notes" : ["*alpha*", "_bravo_", "charlie"]
+        "meta": {
+            "notes": ["*alpha*", "_bravo_", "charlie"]
         }
     })
     print(result)
     assert result["content"] == ["*alpha*", "_bravo_", "charlie"]
 
     result = ExpectationSuitePageRenderer._render_asset_notes({
-        "meta" : {
-            "notes" : {
+        "meta": {
+            "notes": {
                 "format": "string",
                 "content": ["*alpha*", "_bravo_", "charlie"]
             }
@@ -40,8 +43,8 @@ def test_ExpectationSuitePageRenderer_render_asset_notes():
     assert result["content"] == ["*alpha*", "_bravo_", "charlie"]
 
     result = ExpectationSuitePageRenderer._render_asset_notes({
-        "meta" : {
-            "notes" : {
+        "meta": {
+            "notes": {
                 "format": "markdown",
                 "content": "*alpha*"
             }
@@ -56,8 +59,8 @@ def test_ExpectationSuitePageRenderer_render_asset_notes():
         assert result["content"] == ["*alpha*"]
 
     result = ExpectationSuitePageRenderer._render_asset_notes({
-        "meta" : {
-            "notes" : {
+        "meta": {
+            "notes": {
                 "format": "markdown",
                 "content": ["*alpha*", "_bravo_", "charlie"]
             }
@@ -147,47 +150,47 @@ def test_ValidationResultsPageRenderer_render_validation_header():
 def test_ValidationResultsPageRenderer_render_validation_info(titanic_profiled_evrs_1):
     validation_info = ValidationResultsPageRenderer._render_validation_info(titanic_profiled_evrs_1)
     print(json.dumps(validation_info, indent=2))
-    
+
     expected_validation_info = {
-      "content_block_type": "table",
-      "header": "Info",
-      "table": [
-        [
-          "Full Data Asset Identifier",
-          ""
+        "content_block_type": "table",
+        "header": "Info",
+        "table": [
+            [
+                "Full Data Asset Identifier",
+                "my_datasource/my_generator/titanic_data"
+            ],
+            [
+                "Expectation Suite Name",
+                "default"
+            ],
+            [
+                "Great Expectations Version",
+                "__fixture__"
+            ],
+            [
+                "Run ID",
+                "__run_id_fixture__"
+            ],
+            [
+                "Validation Status",
+                "<i class=\"fas fa-times text-danger\" aria-hidden=\"true\"></i> Failed"
+            ]
         ],
-        [
-          "Expectation Suite Name",
-          "default"
-        ],
-        [
-          "Great Expectations Version",
-          "__fixture__"
-        ],
-        [
-          "Run ID",
-          "__run_id_fixture__"
-        ],
-        [
-          "Validation Succeeded",
-          False
-        ]
-      ],
-      "styling": {
-        "classes": [
-          "col-12",
-          "table-responsive"
-        ],
-        "styles": {
-          "margin-top": "20px"
-        },
-        "body": {
-          "classes": [
-            "table",
-            "table-sm"
-          ]
+        "styling": {
+            "classes": [
+                "col-12",
+                "table-responsive"
+            ],
+            "styles": {
+                "margin-top": "20px"
+            },
+            "body": {
+                "classes": [
+                    "table",
+                    "table-sm"
+                ]
+            }
         }
-      }
     }
 
     assert validation_info == expected_validation_info
@@ -215,7 +218,7 @@ def test_ValidationResultsPageRenderer_render_validation_statistics(titanic_prof
         ],
         [
           "Success Percent",
-          "84.31%"
+          "≈84.31%"
         ]
       ],
       "styling": {
@@ -237,3 +240,265 @@ def test_ValidationResultsPageRenderer_render_validation_statistics(titanic_prof
 
     assert validation_statistics == expected_validation_statistics
 
+
+def test_ValidationResultsPageRenderer_render_nested_table_from_dict(titanic_profiled_evrs_1):
+    batch_kwargs_table = ValidationResultsPageRenderer._render_nested_table_from_dict(titanic_profiled_evrs_1["meta"]["batch_kwargs"], header="Batch Kwargs")
+    print(json.dumps(batch_kwargs_table, indent=2))
+
+    expected_batch_kwarg_table = {
+        "content_block_type": "table",
+        "header": "Batch Kwargs",
+        "table": [
+            [
+                {
+                    "content_block_type": "string_template",
+                    "string_template": {
+                        "template": "$value",
+                        "params": {
+                            "value": "partition_id"
+                        },
+                        "styling": {
+                            "default": {
+                                "styles": {
+                                    "word-break": "break-all"
+                                }
+                            }
+                        }
+                    },
+                    "styling": {
+                        "parent": {
+                            "classes": [
+                                "pr-3"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "content_block_type": "string_template",
+                    "string_template": {
+                        "template": "$value",
+                        "params": {
+                            "value": "Titanic"
+                        },
+                        "styling": {
+                            "default": {
+                                "styles": {
+                                    "word-break": "break-all"
+                                }
+                            }
+                        }
+                    },
+                    "styling": {
+                        "parent": {
+                            "classes": []
+                        }
+                    }
+                }
+            ],
+            [
+                {
+                    "content_block_type": "string_template",
+                    "string_template": {
+                        "template": "$value",
+                        "params": {
+                            "value": "path"
+                        },
+                        "styling": {
+                            "default": {
+                                "styles": {
+                                    "word-break": "break-all"
+                                }
+                            }
+                        }
+                    },
+                    "styling": {
+                        "parent": {
+                            "classes": [
+                                "pr-3"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "content_block_type": "string_template",
+                    "string_template": {
+                        "template": "$value",
+                        "params": {
+                            "value": "project_dir/project_path/data/titanic/Titanic.csv"
+                        },
+                        "styling": {
+                            "default": {
+                                "styles": {
+                                    "word-break": "break-all"
+                                }
+                            }
+                        }
+                    },
+                    "styling": {
+                        "parent": {
+                            "classes": []
+                        }
+                    }
+                }
+            ],
+            [
+                {
+                    "content_block_type": "string_template",
+                    "string_template": {
+                        "template": "$value",
+                        "params": {
+                            "value": "reader_options"
+                        },
+                        "styling": {
+                            "default": {
+                                "styles": {
+                                    "word-break": "break-all"
+                                }
+                            }
+                        }
+                    },
+                    "styling": {
+                        "parent": {
+                            "classes": [
+                                "pr-3"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "content_block_type": "table",
+                    "table": [
+                        [
+                            {
+                                "content_block_type": "string_template",
+                                "string_template": {
+                                    "template": "$value",
+                                    "params": {
+                                        "value": "engine"
+                                    },
+                                    "styling": {
+                                        "default": {
+                                            "styles": {
+                                                "word-break": "break-all"
+                                            }
+                                        }
+                                    }
+                                },
+                                "styling": {
+                                    "parent": {
+                                        "classes": [
+                                            "pr-3"
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "content_block_type": "string_template",
+                                "string_template": {
+                                    "template": "$value",
+                                    "params": {
+                                        "value": "python"
+                                    },
+                                    "styling": {
+                                        "default": {
+                                            "styles": {
+                                                "word-break": "break-all"
+                                            }
+                                        }
+                                    }
+                                },
+                                "styling": {
+                                    "parent": {
+                                        "classes": []
+                                    }
+                                }
+                            }
+                        ],
+                        [
+                            {
+                                "content_block_type": "string_template",
+                                "string_template": {
+                                    "template": "$value",
+                                    "params": {
+                                        "value": "sep"
+                                    },
+                                    "styling": {
+                                        "default": {
+                                            "styles": {
+                                                "word-break": "break-all"
+                                            }
+                                        }
+                                    }
+                                },
+                                "styling": {
+                                    "parent": {
+                                        "classes": [
+                                            "pr-3"
+                                        ]
+                                    }
+                                }
+                            },
+                            {
+                                "content_block_type": "string_template",
+                                "string_template": {
+                                    "template": "$value",
+                                    "params": {
+                                        "value": "None"
+                                    },
+                                    "styling": {
+                                        "default": {
+                                            "styles": {
+                                                "word-break": "break-all"
+                                            }
+                                        }
+                                    }
+                                },
+                                "styling": {
+                                    "parent": {
+                                        "classes": []
+                                    }
+                                }
+                            }
+                        ]
+                    ],
+                    "styling": {
+                        "classes": [
+                            "col-12",
+                            "table-responsive"
+                        ],
+                        "body": {
+                            "classes": [
+                                "table",
+                                "table-sm",
+                                "m-0"
+                            ]
+                        },
+                        "parent": {
+                            "classes": [
+                                "pt-0",
+                                "pl-0",
+                                "border-top-0"
+                            ]
+                        }
+                    }
+                }
+            ]
+        ],
+        "styling": {
+            "classes": [
+                "col-12",
+                "table-responsive"
+            ],
+            "styles": {
+                "margin-top": "20px"
+            },
+            "body": {
+                "classes": [
+                    "table",
+                    "table-sm"
+                ]
+            }
+        }
+    }
+
+    assert batch_kwargs_table == expected_batch_kwarg_table

@@ -291,6 +291,7 @@ class PandasDataset(MetaPandasDataset, pd.DataFrame):
     # get an attribute error when trying to access them (I think this could be done in __finalize__?)
     _internal_names = pd.DataFrame._internal_names + [
         '_batch_kwargs',
+        '_batch_id',
         '_expectation_suite',
         '_config',
         'caching',
@@ -383,7 +384,9 @@ class PandasDataset(MetaPandasDataset, pd.DataFrame):
     def get_column_median(self, column):
         return self[column].median()
 
-    def get_column_quantiles(self, column, quantiles):
+    def get_column_quantiles(self, column, quantiles, allow_relative_error=False):
+        if allow_relative_error is not False:
+            raise ValueError("PandasDataset does not support relative error in column quantiles.")
         return self[column].quantile(quantiles, interpolation='nearest').tolist()
 
     def get_column_stdev(self, column):

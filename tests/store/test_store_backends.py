@@ -5,6 +5,7 @@ import os
 import re
 import boto3
 from moto import mock_s3
+from mock import patch
 
 import six
 if six.PY2: FileNotFoundError = IOError
@@ -17,6 +18,7 @@ from great_expectations.data_context.store import (
     InMemoryStoreBackend,
     FixedLengthTupleFilesystemStoreBackend,
     FixedLengthTupleS3StoreBackend,
+    FixedLengthTupleGCSStoreBackend,
 )
 from great_expectations.util import (
     gen_directory_tree_str,
@@ -69,7 +71,7 @@ def test_FilesystemStoreBackend_two_way_string_conversion(tmp_path_factory):
         root_directory=os.path.abspath(path),
         base_directory=project_path,
         key_length=3,
-        filepath_template= "{0}/{1}/{2}/foo-{2}-expectations.txt",
+        filepath_template="{0}/{1}/{2}/foo-{2}-expectations.txt",
     )
 
     tuple_ = ("A__a", "B-b", "C")
@@ -158,7 +160,7 @@ def test_FixedLengthTupleFilesystemStoreBackend(tmp_path_factory):
     # assert my_store.get("subdir/my_file_CCC") == "ccc"
 
     print(my_store.list_keys())
-    assert set(my_store.list_keys()) == set([("AAA",), ("BBB",)])
+    assert set(my_store.list_keys()) == {("AAA",), ("BBB",)}
 
     print(gen_directory_tree_str(project_path))
     assert gen_directory_tree_str(project_path) == """\
@@ -166,6 +168,7 @@ test_FixedLengthTupleFilesystemStoreBackend__dir0/
     my_file_AAA
     my_file_BBB
 """
+
 
 @mock_s3
 def test_FixedLengthTupleS3StoreBackend():
@@ -187,26 +190,88 @@ def test_FixedLengthTupleS3StoreBackend():
     conn.create_bucket(Bucket=bucket)
 
     my_store = FixedLengthTupleS3StoreBackend(
-        root_directory=os.path.abspath(path), # NOTE: Eugene: 2019-09-06: root_directory should be removed from the base class
+        # NOTE: Eugene: 2019-09-06: root_directory should be removed from the base class
+        root_directory=os.path.abspath(path),
         key_length=1,
         filepath_template="my_file_{0}",
         bucket=bucket,
         prefix=prefix,
     )
 
-    my_store.set(("AAA",), "aaa", content_type='text/html')
-    assert my_store.get(("AAA",)) == b'aaa'
+    my_store.set(("AAA",), "aaa", content_type='text/html; charset=utf-8')
+    assert my_store.get(("AAA",)) == 'aaa'
+
 
     # We should have set the raw data content type since we encode as utf-8
     object = boto3.client('s3').get_object(Bucket=bucket, Key=prefix + "/my_file_AAA")
-    assert object["ContentType"] == 'text/html'
+    assert object["ContentType"] == 'text/html; charset=utf-8'
     assert object["ContentEncoding"] == 'utf-8'
 
     my_store.set(("BBB",), "bbb")
-    assert my_store.get(("BBB",)) == b'bbb'
+    assert my_store.get(("BBB",)) == 'bbb'
 
     print(my_store.list_keys())
-    assert set(my_store.list_keys()) == set([("AAA",), ("BBB",)])
-
+    assert set(my_store.list_keys()) == {("AAA",), ("BBB",)}
     assert set([s3_object_info['Key'] for s3_object_info in boto3.client('s3').list_objects(Bucket=bucket, Prefix=prefix)['Contents']])\
            == set(['this_is_a_test_prefix/my_file_AAA', 'this_is_a_test_prefix/my_file_BBB'])
+
+
+def test_FixedLengthTupleGCSStoreBackend():
+
+    """
+    What does this test test and why?
+
+    Since no package like moto exists for GCP services, we mock the GCS client
+    and assert that the store backend makes the right calls for set, get, and list.
+
+    """
+
+    path = "dummy_str"
+    bucket = "leakybucket"
+    prefix = "this_is_a_test_prefix"
+    project = "dummy-project"
+
+    my_store = FixedLengthTupleGCSStoreBackend(
+        root_directory=os.path.abspath(path), # NOTE: Eugene: 2019-09-06: root_directory should be removed from the base class
+        key_length=1,
+        filepath_template="my_file_{0}",
+        bucket=bucket,
+        prefix=prefix,
+        project=project
+    )
+
+    with patch("google.cloud.storage.Client", autospec=True) as mock_gcs_client:
+        
+        mock_client = mock_gcs_client.return_value
+        mock_bucket = mock_client.get_bucket.return_value
+        mock_blob = mock_bucket.blob.return_value
+
+        my_store.set(("AAA",), "aaa", content_type='text/html')
+
+        mock_gcs_client.assert_called_once_with('dummy-project')
+        mock_client.get_bucket.assert_called_once_with("leakybucket")
+        mock_bucket.blob.assert_called_once_with("this_is_a_test_prefix/my_file_AAA")
+        mock_blob.upload_from_string.assert_called_once_with(b"aaa", content_type="text/html")
+
+    with patch("google.cloud.storage.Client", autospec=True) as mock_gcs_client:
+
+        mock_client = mock_gcs_client.return_value
+        mock_bucket = mock_client.get_bucket.return_value
+        mock_blob = mock_bucket.get_blob.return_value
+        mock_str = mock_blob.download_as_string.return_value
+
+        my_store.get(("BBB",))
+
+        mock_gcs_client.assert_called_once_with('dummy-project')
+        mock_client.get_bucket.assert_called_once_with("leakybucket")
+        mock_bucket.get_blob.assert_called_once_with("this_is_a_test_prefix/my_file_BBB")
+        mock_blob.download_as_string.assert_called_once()
+        mock_str.decode.assert_called_once_with("utf-8")
+
+    with patch("google.cloud.storage.Client", autospec=True) as mock_gcs_client:
+
+        mock_client = mock_gcs_client.return_value
+
+        my_store.list_keys()
+
+        mock_client.list_blobs.assert_called_once_with("leakybucket", prefix="this_is_a_test_prefix")

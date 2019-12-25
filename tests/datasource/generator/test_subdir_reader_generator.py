@@ -5,6 +5,7 @@ import os
 from great_expectations.data_context.util import safe_mmkdir
 
 from great_expectations.datasource.generator import SubdirReaderGenerator
+from great_expectations.exceptions import BatchKwargsError
 
 
 def test_subdir_reader_path_partitioning(tmp_path_factory):
@@ -37,7 +38,7 @@ def test_subdir_reader_path_partitioning(tmp_path_factory):
 
     asset_1_kwargs = [kwargs for kwargs in subdir_reader_generator.get_iterator("asset_1")]
     asset_2_kwargs = [kwargs for kwargs in subdir_reader_generator.get_iterator("asset_2")]
-    with pytest.raises(IOError):
+    with pytest.raises(BatchKwargsError):
         not_an_asset_kwargs = [kwargs for kwargs in subdir_reader_generator.get_iterator("not_an_asset")]
 
     assert len(asset_1_kwargs) == 3
@@ -55,7 +56,7 @@ def test_subdir_reader_path_partitioning(tmp_path_factory):
         "20190102__asset_1",
         "20190103__asset_1"
     }
-    assert len(asset_1_kwargs[0].keys()) == 2
+    assert len(asset_1_kwargs[0].keys()) == 3
 
     assert len(asset_2_kwargs) == 2
     paths = [kwargs["path"] for kwargs in asset_2_kwargs]
@@ -68,7 +69,7 @@ def test_subdir_reader_path_partitioning(tmp_path_factory):
         "20190101__asset_2",
         "20190102__asset_2"
     }
-    assert len(asset_2_kwargs[0].keys()) == 2
+    assert len(asset_2_kwargs[0].keys()) == 3
 
 
 def test_subdir_reader_file_partitioning(tmp_path_factory):
@@ -102,3 +103,30 @@ def test_subdir_reader_file_partitioning(tmp_path_factory):
 
     kwargs = subdir_reader_generator.build_batch_kwargs_from_partition_id("20190101__asset_1", "20190101__asset_1")
     assert kwargs["path"] == os.path.join(base_directory, "20190101__asset_1.csv")
+
+    # We should also be able to pass a limit
+    kwargs = subdir_reader_generator.build_batch_kwargs_from_partition_id("20190101__asset_1", "20190101__asset_1",
+                                                                          limit=10)
+    assert kwargs["path"] == os.path.join(base_directory, "20190101__asset_1.csv")
+    assert kwargs["limit"] == 10
+
+
+def test_subdir_reader_configurable_reader_method(tmp_path_factory):
+    base_directory = str(tmp_path_factory.mktemp("test_folder_connection_path"))
+    mock_files = [
+        "20190101__asset_1.dat",
+        "20190102__asset_1.dat",
+        "20190103__asset_1.dat",
+        "asset_2/20190101__asset_2.dat",
+        "asset_2/20190102__asset_2.dat"
+    ]
+    for file in mock_files:
+        if "/" in file:
+            safe_mmkdir(os.path.join(base_directory, file.split("/")[0]))
+        open(os.path.join(base_directory, file), "w").close()
+
+    # If we have files, we should see them as individual assets
+    subdir_reader_generator = SubdirReaderGenerator("test_generator", base_directory=base_directory,
+                                                    reader_method='csv', known_extensions=['.dat'])
+    batch_kwargs = next(subdir_reader_generator.get_iterator('asset_2'))
+    assert batch_kwargs['reader_method'] == 'csv'

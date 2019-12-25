@@ -71,14 +71,28 @@ Here is an example of a site configuration from great_expectations.yml with defa
             module_name: great_expectations.render.renderer
             class_name: ProfilingResultsPageRenderer
 
-``validations_store`` in the example above specifies the location of validation
-and profiling results that the site will include in the documentation. The
-store's ``type`` can be ``filesystem`` or ``s3`` (S3 store is not currently
-implemented, but will be supported in the near future). ``base_directory`` must
-be specified for ``filesystem`` stores. The optional ``run_id_filter`` attribute
-allows to include (``eq`` for exact match) or exclude (``ne``) validation
-results with a particular run id.
+``validations_store`` in the example above specifies the name of a store configured in the `stores` section.
+Validation and profiling results from that store will be included in the documentation. The optional ``run_id_filter``
+attribute allows to include (``eq`` for exact match) or exclude (``ne``) validation results with a particular run id.
 
+.. _customizing_data_docs_store_backend:
+
+Automatically Publishing Data Docs
+=====================================
+
+It is possible to directly publish (continuously updating!) data docs sites to a shared location such as a static
+site hosted in S3 by simply updating the store_backend configuration in the site configuration. If we modify the
+configuration in the example above to adjust the store backend to an S3 bucket of our choosing, our `SiteBuilder`
+will automatically save the resulting site to that bucket.
+
+.. code-block:: yaml
+
+  store_backend:
+    class_name: FixedLengthTupleS3StoreBackend
+    bucket: data-docs.my_org.org
+    prefix:
+
+See the tutorial on :ref:`publishing data docs to S3 <publishing_data_docs_to_s3>` for more information.
 
 More advanced configuration
 ============================
@@ -135,7 +149,7 @@ file in our custom_renderers package.
     └── additional_ge_plugin.py
 
 
-*************************
+*********************
 Building Data Docs
 *********************
 
@@ -190,7 +204,12 @@ for how to profile a single batch of data and build documentation from the valid
   context = ge.data_context.DataContext()
 
   # load a batch from the data asset
-  batch = context.get_batch('ratings')
+  data_asset_name = context.normalize_data_asset_name('ratings')
+  context.creat_expectation_suite(data_asset_name, 'default'),
+  batch = context.get_batch(
+    data_asset_name=data_asset_name,
+    expectation_suite_name='default',
+    context.yield_batch_kwargs(data_asset_name))
 
   # run the profiler on the batch - this returns an expectation suite and validation results for this suite
   expectation_suite, validation_result = BasicDatasetProfiler().profile(batch)
@@ -251,6 +270,29 @@ further customize HTML documentation:
 
 Getting Started
 ===============
+
+Making Minor Adjustments
+-------------------------
+Many of the HTML elements in the default Data Docs pages have pre-configured classes that you may use to make
+minor adjustments using your own custom CSS. By default, when you run ``great_expectations init``,
+Great Expectations creates a scaffold within the ``plugins`` directory for customizing Data Docs.
+Within this scaffold is a file called ``data_docs_custom_styles.css`` - this CSS file contains all the pre-configured classes
+you may use to customize the look and feel of the default Data Docs pages. All custom CSS, applied to these pre-configured classes
+or any other HTML elements, must be placed in this file.
+
+Scaffolded directory tree:
+
+.. code-block:: bash
+
+  plugins
+  └── custom_data_docs
+      ├── renderers
+      ├── styles
+      │   └── data_docs_custom_styles.css
+      └── views
+
+Using Custom Views and Renderers
+---------------------------------
 Suppose you start a new Great Expectations project by running ``great_expectations init`` and compile your first Data Docs
 site. After looking over the local site, you decide you want to implement the following changes:
 
@@ -260,20 +302,36 @@ site. After looking over the local site, you decide you want to implement the fo
 
 To make these changes, you must first implement the custom View and Renderers and ensure they are available in the plugins directory specified
 in your project configuration (``plugins/`` by default). Note that you can use a subdirectory and standard python submodule
-notation, but you must include an __init__.py file in your custom package.
+notation, but you must include an __init__.py file in your custom package. By default, when you run ``great_expectations init``,
+Great Expectations creates placeholder directories for your custom views, renderers, and CSS stylesheets within the ``plugins`` directory. If you wish, you may save
+your custom views and renderers in an alternate location however, any CSS stylesheets must be saved to ``plugins/custom_data_docs/styles``.
+
+Scaffolded directory tree:
+
+.. code-block:: bash
+
+  plugins
+  └── custom_data_docs
+      ├── renderers
+      ├── styles
+      │   └── data_docs_custom_styles.css
+      └── views
 
 When you are done with your implementations, your ``plugins/`` directory has the following structure:
 
 .. code-block:: bash
 
   plugins
-  ├── custom_renderers
-  │   ├── __init__.py
-  │   ├── custom_table_renderer.py
-  │   └── custom_expectation_suite_page_renderer.py
-  └── custom_views
-      ├── __init__.py
-      └── custom_expectation_suite_view.py
+  └── custom_data_docs
+      ├── renderers
+          ├── __init__.py
+          ├── custom_table_renderer.py
+          └── custom_expectation_suite_page_renderer.py
+      ├── styles
+      │   └── data_docs_custom_styles.css
+      └── views
+          ├── __init__.py
+          └── custom_expectation_suite_view.py
 
 For Data Docs to use your custom Views and Renderers when compiling your local Data Docs site, you must specify
 where to use them in the ``data_docs_sites`` section of your project configuration.
@@ -304,10 +362,10 @@ This is what it looks like after your changes are added:
             class_name: DefaultSiteSectionBuilder
             source_store_name: expectations_store
             renderer:
-              module_name: custom_renderers.custom_expectation_suite_page_renderer
+              module_name: custom_data_docs.renderers.custom_expectation_suite_page_renderer
               class_name: CustomExpectationSuitePageRenderer
             view:
-              module_name: custom_views.custom_expectation_suite_view
+              module_name: custom_data_docs.views.custom_expectation_suite_view
               class_name: CustomExpectationSuiteView
           validations:
             class_name: DefaultSiteSectionBuilder
@@ -320,7 +378,7 @@ This is what it looks like after your changes are added:
               column_section_renderer:
                 class_name: ValidationResultsColumnSectionRenderer
                 table_renderer:
-                  module_name: custom_renderers.custom_table_renderer
+                  module_name: custom_data_docs.renderers.custom_table_renderer
                   class_name: CustomTableRenderer
 
 Note that if your ``data_docs_sites`` configuration contains a ``site_section_builders`` key, you must now explicitly provide
